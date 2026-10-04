@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.0.0 — 2026-10-05
+
+Kraken Unleashed becomes an application rather than a single-purpose streamer.
+
+### Added
+- **GTK4/libadwaita desktop app** (Linux) with a live preview rendered by the
+  service without touching the cooler, plus `kraken-unleashed-ctl` for scripting.
+- **Control socket.** The service is still the only process that may hold the
+  cooler; everything else is now a client of it. Unix socket on Linux,
+  group-restricted; loopback TCP with a token file on Windows.
+- **LED effect engine**: breathing, static, pulse, spectrum, rainbow, wave,
+  chase, gradient, and a coolant-temperature mode. Rendered per LED across the
+  ring and fans as one 48-LED strip, still phase-locked to the boot clock so an
+  effect stays in step with rgb-sync elsewhere on the machine.
+- **OpenRGB support over E1.31.** OpenRGB cannot drive this cooler directly —
+  its Hue2 packets are rejected by the firmware — and an OpenRGB plugin would
+  not help, because plugins only load in its GUI. Instead the service listens
+  for sACN, which OpenRGB already speaks, and relays it to the LEDs. OpenRGB
+  never touches the device, so the one-owner rule holds, and every OpenRGB
+  effect and profile works on the cooler. Falls back to the local effect when
+  nothing is sending.
+- **Experimental Windows build** (service + CLI). The cooler is a composite
+  device, so WinUSB binds to interface 0 while interface 1 keeps the native HID
+  driver. **Not tested on hardware** — see [docs/WINDOWS.md](docs/WINDOWS.md).
+- `kraken-unleashed-ctl diagnose`, which checks the device and driver binding
+  without going through the control socket.
+
+### Changed
+- Config moves to `/etc/kraken-unleashed.conf` (Windows:
+  `C:\ProgramData\KrakenUnleashed\config.json`) and gains sections. 1.x
+  configs are migrated on upgrade rather than reset.
+- `kraken-lcd.service` is replaced by `kraken-unleashed.service`; the installer
+  retires the old one. `/run/kraken-lcd/status.json` is still written on Linux so
+  existing exporters keep working.
+- Platform-specific code is isolated in `compat.py` and `transport.py`.
+
+### Fixed
+- The control server's cleanup ran on a daemon thread the interpreter kills at
+  shutdown, leaving a stale socket in `/run`.
+- `--preview` only worked after installation, not from a clone — which is the
+  first command the customisation guide tells people to run.
+- Windows builds shipped without libusb: pyusb loads it via ctypes, so
+  PyInstaller never saw it and every USB call failed with `NoBackendError`.
+
 ## 1.0.0 — 2026-10-04
 
 First release.

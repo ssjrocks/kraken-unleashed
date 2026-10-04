@@ -19,8 +19,17 @@ cd kraken-unleashed
 sudo ./install.sh
 ```
 
-That's it. The service starts, survives reboots and sleep, and reads its settings
-from `/etc/kraken-lcd.conf`.
+That's it. The service starts, survives reboots and sleep, and you configure it
+from the **Kraken Unleashed** app in your applications menu (or
+`/etc/kraken-unleashed.conf`, or `kraken-unleashed-ctl`).
+
+It also drives the cooler's ring and fan LEDs with its own effects — or hands
+them to **OpenRGB**, which cannot talk to this cooler directly but can drive it
+through the built-in E1.31 relay. See [docs/RGB.md](docs/RGB.md).
+
+> **Windows:** an experimental service + CLI build is on the
+> [releases page](https://github.com/ssjrocks/kraken-unleashed/releases).
+> It has not been tested on hardware yet — see [docs/WINDOWS.md](docs/WINDOWS.md).
 
 ---
 
@@ -98,7 +107,8 @@ fonts, adding your own sensor screen — is in
 | [CUSTOMISING.md](docs/CUSTOMISING.md) | Backgrounds, layouts, colours, writing your own screen |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Black screen, flicker, bootloader recovery, conflicts |
 | [PROTOCOL.md](docs/PROTOCOL.md) | The LCD protocol, both paths, the q565 format |
-| [RGB.md](docs/RGB.md) | The cooler's LEDs, and syncing them with the rest of your lighting |
+| [RGB.md](docs/RGB.md) | The cooler's LEDs, effects, and letting OpenRGB drive them |
+| [WINDOWS.md](docs/WINDOWS.md) | The experimental Windows build, and the driver step it needs |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit, who owns the device, the frame loop |
 
 ## Playing nicely with other software
