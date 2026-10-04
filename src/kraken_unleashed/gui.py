@@ -145,6 +145,8 @@ class Window(Adw.ApplicationWindow):
 
         self.bg_row = Adw.ActionRow(title='Background',
                                     subtitle='Any GIF or still image')
+        # Long paths otherwise wrap to several lines and get clipped by the row.
+        self.bg_row.set_subtitle_lines(1)
         choose = Gtk.Button(label='Choose…', valign=Gtk.Align.CENTER)
         choose.connect('clicked', self._on_choose_background)
         reset = Gtk.Button(icon_name='edit-undo-symbolic', valign=Gtk.Align.CENTER,
@@ -348,7 +350,7 @@ class Window(Adw.ApplicationWindow):
                 self.style_row.set_selected(styles.index(lcd['style']))
 
             self.lcd_enabled.set_active(bool(lcd['enabled']))
-            self.bg_row.set_subtitle(lcd.get('gif') or 'Bundled demo background')
+            self._set_background_label(lcd.get('gif'))
             self.dim_row.set_value(float(lcd['dim']))
             self.rotate_row.set_selected([0, 90, 180, 270].index(int(lcd['rotate']))
                                          if int(lcd['rotate']) in (0, 90, 180, 270) else 1)
@@ -485,8 +487,22 @@ class Window(Adw.ApplicationWindow):
             self.banner.set_title(f'Could not set the background: {exc}')
             self.banner.set_revealed(True)
             return
-        self.bg_row.set_subtitle(path or 'Bundled demo background')
+        self._set_background_label(path)
         self.request_preview()
+
+    def _set_background_label(self, path):
+        """Show the filename, keep the full path on hover.
+
+        These paths are long -- CoolerControl's cache names images after a
+        64-character device UID -- and a wrapped path pushes the row past its
+        own height and gets cut off.
+        """
+        if not path:
+            self.bg_row.set_subtitle('Bundled demo background')
+            self.bg_row.set_tooltip_text(None)
+            return
+        self.bg_row.set_subtitle(os.path.basename(path))
+        self.bg_row.set_tooltip_text(path)
 
     # -- preview and status ------------------------------------------------- #
 

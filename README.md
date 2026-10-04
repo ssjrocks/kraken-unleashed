@@ -5,9 +5,14 @@ your own animated GIF, on Linux — at the same frame rate the Windows software
 manages, not a slideshow.
 
 <p align="center">
-  <img src="assets/screenshots/triple.png" width="260" alt="All sensors layout">
-  <img src="assets/screenshots/liquid_ring.png" width="260" alt="Liquid ring layout">
-  <img src="assets/screenshots/cpu_gpu.png" width="260" alt="CPU and GPU layout">
+  <img src="assets/screenshots/triple.png" width="240" alt="All sensors layout">
+  <img src="assets/screenshots/liquid_ring.png" width="240" alt="Liquid ring layout">
+  <img src="assets/screenshots/cpu_gpu.png" width="240" alt="CPU and GPU layout">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/app-display.png" width="380" alt="The app's Display page">
+  <img src="assets/screenshots/app-openrgb.png" width="380" alt="The app's OpenRGB page">
 </p>
 
 It also drives the cooler's own ring and fan LEDs, which OpenRGB cannot do on

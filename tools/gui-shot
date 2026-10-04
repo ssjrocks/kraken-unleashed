@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+#
+# Run a GUI program on a private offscreen X display and screenshot it.
+#
+#     gui-shot out.png kraken-unleashed
+#     gui-shot -s 1100x820 -w 8 out.png kraken-unleashed
+#     gui-shot -c 449,27 out.png kraken-unleashed          # click, then capture
+#
+# Why this rather than a desktop screenshot: GNOME restricts
+# org.gnome.Shell.Screenshot to its own UI, and the portal route needs a
+# permission dialog answered by hand every session. This needs neither. It also
+# never steals focus, never covers what you are doing, and gives the same window
+# size every time, which makes before/after comparisons actually comparable.
+#
+# The trade-off: it is Xwayland, not your real session, so it will not show your
+# GTK theme or scaling. For checking layout and wiring, that does not matter.
+
+set -euo pipefail
+
+SIZE=1100x820
+WAIT=6
+DISPLAY_NUM=
+KEYS=
+CLICKS=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -s|--size)    SIZE="$2"; shift 2 ;;
+        -w|--wait)    WAIT="$2"; shift 2 ;;
+        -k|--keys)    KEYS="$2"; shift 2 ;;
+        -c|--click)   CLICKS="$CLICKS $2"; shift 2 ;;
+        -h|--help)    sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)            break ;;
+    esac
+done
+
+if [ $# -lt 2 ]; then
+    echo "usage: gui-shot [-s WxH] [-w seconds] OUTPUT.png COMMAND [ARGS...]" >&2
+    exit 2
+fi
+
+OUT="$1"; shift
+
+# Find a free display number rather than assuming :99 is unused.
+for n in $(seq 90 120); do
+    if [ ! -e "/tmp/.X11-unix/X$n" ]; then DISPLAY_NUM=$n; break; fi
+done
+[ -n "$DISPLAY_NUM" ] || { echo "no free X display number" >&2; exit 1; }
+
+Xvfb ":$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp >/dev/null 2>&1 &
+XVFB_PID=$!
+APP_PID=
+
+cleanup() {
+    [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null || true
+    kill "$XVFB_PID" 2>/dev/null || true
+    wait "$XVFB_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Give Xvfb a moment to create its socket before anything connects.
+for _ in $(seq 1 40); do
+    [ -e "/tmp/.X11-unix/X$DISPLAY_NUM" ] && break
+    sleep 0.25
+done
+
+# Two things are needed here, and both are easy to miss:
+#   GDK_BACKEND=x11  - a GTK4 app defaults to Wayland and would ignore DISPLAY
+#                      entirely, connecting to the real compositor instead.
+#   dbus-run-session - GtkApplication/AdwApplication is single-instance over the
+#                      session bus. With the user's bus, a second copy just
+#                      activates the already-running window and exits, so there
+#                      is nothing on the offscreen display to capture.
+if command -v dbus-run-session >/dev/null; then
+    DISPLAY=":$DISPLAY_NUM" GDK_BACKEND=x11 \
+        dbus-run-session -- "$@" >/tmp/gui-shot-app.log 2>&1 &
+else
+    DISPLAY=":$DISPLAY_NUM" GDK_BACKEND=x11 "$@" >/tmp/gui-shot-app.log 2>&1 &
+fi
+APP_PID=$!
+
+sleep "$WAIT"
+
+# Optional input before capturing, for reaching a tab or opening a menu.
+if command -v xdotool >/dev/null; then
+    for key in $KEYS; do
+        DISPLAY=":$DISPLAY_NUM" xdotool key --clearmodifiers "$key" || true
+        sleep 0.6
+    done
+    for point in $CLICKS; do
+        x="${point%,*}"; y="${point#*,}"
+        DISPLAY=":$DISPLAY_NUM" xdotool mousemove "$x" "$y" click 1 || true
+        sleep 0.8
+    done
+    [ -n "$KEYS$CLICKS" ] && sleep 1
+fi
+
+if ! kill -0 "$APP_PID" 2>/dev/null; then
+    echo "the program exited before it could be captured; its output:" >&2
+    cat /tmp/gui-shot-app.log >&2
+    exit 1
+fi
+
+DISPLAY=":$DISPLAY_NUM" import -window root "$OUT"
+echo "$OUT"
