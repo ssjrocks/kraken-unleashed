@@ -71,9 +71,17 @@ jobs:
           dist\KrakenUnleashed\kraken-unleashed-daemon.exe --list-effects
           dist\KrakenUnleashed\kraken-unleashed-daemon.exe --list-styles
           # No cooler on a CI runner, so diagnose is expected to report that it
-          # cannot find one. It must say so cleanly rather than crash.
-          dist\KrakenUnleashed\kraken-unleashed-ctl.exe diagnose; if ($LASTEXITCODE -ne 1) { throw "diagnose should exit 1 with no device, got $LASTEXITCODE" }
+          # cannot find one. It must say so cleanly rather than traceback -- a
+          # crash here means libusb is missing from the bundle, which would fail
+          # exactly the same way on a real machine.
+          $out = & dist\KrakenUnleashed\kraken-unleashed-ctl.exe diagnose 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($out -match 'Traceback|NoBackendError') { throw "diagnose crashed instead of reporting cleanly" }
+          if ($out -notmatch 'not found') { throw "diagnose did not report the missing cooler" }
+          if ($code -ne 1) { throw "diagnose should exit 1 with no device, got $code" }
           Write-Host "diagnose reported the missing device cleanly"
+          $global:LASTEXITCODE = 0
 
       - name: Render a frame without a device
         # Proves the vendored renderer and the bundled background survived

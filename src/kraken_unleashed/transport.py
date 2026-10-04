@@ -23,6 +23,23 @@ import usb.util
 
 from .compat import IS_WINDOWS
 
+
+def _backend():
+    """A libusb backend, bundling one on Windows.
+
+    Linux has libusb as a system library, so pyusb finds it by itself. Windows
+    has no system libusb, and pyusb loads it through ctypes at runtime -- which
+    PyInstaller cannot see, so a frozen build ships without it and every call
+    fails with NoBackendError. libusb-package carries the DLL for exactly this.
+    """
+    if not IS_WINDOWS:
+        return None                     # pyusb's own discovery is fine
+    try:
+        import libusb_package
+        return libusb_package.get_libusb1_backend()
+    except Exception:
+        return None                     # fall back to pyusb's discovery
+
 VID, PID, BOOTLOADER_PID = 0x1E71, 0x3012, 0x3011
 HID_INTERFACE = 1
 BULK_INTERFACE = 0
@@ -31,6 +48,10 @@ BULK_ENDPOINT = 0x02
 
 class DeviceError(RuntimeError):
     """Something is wrong with the device or how it is attached."""
+
+
+class NoBackend(DeviceError):
+    """libusb is not available, so no USB device can be reached at all."""
 
 
 class BootloaderMode(DeviceError):
@@ -43,12 +64,23 @@ class NotFound(DeviceError):
 
 def find_usb():
     """The pyusb device handle, or raise with an explanation."""
-    if usb.core.find(idVendor=VID, idProduct=BOOTLOADER_PID) is not None:
-        raise BootloaderMode(
-            'Kraken is in BOOTLOADER mode (1e71:3011). It needs a full power cut '
-            '(shut down, switch the PSU off ~30s); refusing to touch it. '
-            'See docs/TROUBLESHOOTING.md.')
-    dev = usb.core.find(idVendor=VID, idProduct=PID)
+    kwargs = {}
+    backend = _backend()
+    if backend is not None:
+        kwargs['backend'] = backend
+    try:
+        if usb.core.find(idVendor=VID, idProduct=BOOTLOADER_PID, **kwargs) is not None:
+            raise BootloaderMode(
+                'Kraken is in BOOTLOADER mode (1e71:3011). It needs a full power cut '
+                '(shut down, switch the PSU off ~30s); refusing to touch it. '
+                'See docs/TROUBLESHOOTING.md.')
+        dev = usb.core.find(idVendor=VID, idProduct=PID, **kwargs)
+    except usb.core.NoBackendError as exc:
+        raise NoBackend(
+            'no USB backend (libusb) is available, so the cooler cannot be '
+            'reached. On Windows this means the bundled libusb-1.0.dll is '
+            'missing from the install folder; on Linux, install libusb-1.0.'
+        ) from exc
     if dev is None:
         raise NotFound(
             f'Kraken {VID:04x}:{PID:04x} not found. Is it plugged into an '
@@ -206,9 +238,10 @@ def diagnose():
     try:
         usb_dev = find_usb()
         lines.append(f'[ok]   found Kraken {VID:04x}:{PID:04x} on USB')
-    except BootloaderMode as exc:
-        return False, [f'[FAIL] {exc}']
-    except NotFound as exc:
+    except DeviceError as exc:
+        # Every "cannot reach the device" case lands here: bootloader mode, no
+        # cooler attached, or no libusb at all. Report it rather than traceback;
+        # this command exists for exactly these situations.
         return False, [f'[FAIL] {exc}']
 
     try:

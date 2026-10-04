@@ -1,6 +1,7 @@
 numpy
 pillow
 pyusb
+libusb-package
 hid
 psutil
 WMI

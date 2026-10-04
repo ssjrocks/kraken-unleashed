@@ -11,6 +11,8 @@ Run from the repository root:
 """
 import os
 
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
 ROOT = os.path.abspath(os.getcwd())
 SRC = os.path.join(ROOT, 'src')
 
@@ -24,19 +26,25 @@ hidden = [
     'kraken_unleashed.compositor', 'kraken_unleashed.sensors',
     'kraken_unleashed.config', 'kraken_unleashed.compat',
     'PIL._tkinter_finder', 'hid', 'psutil', 'wmi', 'win32com.client',
+    'libusb_package', 'usb.backend.libusb1',
 ]
 
 datas = [
     (os.path.join(ROOT, 'assets', 'demo.gif'), 'assets'),
     (os.path.join(SRC, 'ok', 'resources'), os.path.join('ok', 'resources')),
 ]
+# pyusb loads libusb through ctypes at runtime, so PyInstaller's static analysis
+# never sees the DLL and a frozen build fails with NoBackendError on every call.
+# libusb-package carries it; pull in both its data files and the DLL itself.
+datas += collect_data_files('libusb_package')
+libusb_binaries = collect_dynamic_libs('libusb_package')
 
 daemon_a = Analysis([os.path.join(SRC, 'bin', 'kraken-unleashed-daemon')],
-                    pathex=[SRC], binaries=[], datas=datas,
+                    pathex=[SRC], binaries=libusb_binaries, datas=datas,
                     hiddenimports=hidden, hookspath=[], runtime_hooks=[],
                     excludes=['tkinter', 'gi', 'matplotlib'], noarchive=False)
 ctl_a = Analysis([os.path.join(SRC, 'bin', 'kraken-unleashed-ctl')],
-                 pathex=[SRC], binaries=[], datas=datas,
+                 pathex=[SRC], binaries=libusb_binaries, datas=datas,
                  hiddenimports=hidden, hookspath=[], runtime_hooks=[],
                  excludes=['tkinter', 'gi', 'matplotlib'], noarchive=False)
 
