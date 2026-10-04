@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kraken Unleashed
+GenericName=Cooler Display and Lighting
+Comment=Customise the LCD and lighting on an NZXT Kraken 2024 Elite
+Exec=kraken-unleashed
+Icon=io.github.ssjrocks.KrakenUnleashed
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=NZXT;Kraken;AIO;LCD;RGB;cooler;lighting;
+StartupNotify=true
+StartupWMClass=io.github.ssjrocks.KrakenUnleashed

@@ -1,0 +1,27 @@
+[Unit]
+Description=Kraken Unleashed: LCD and lighting for the NZXT Kraken 2024
+Documentation=https://github.com/ssjrocks/kraken-unleashed
+# Nothing else may hold this cooler. If you use CoolerControl, disable the
+# Kraken device there; if you use OpenRGB, disable its Kraken detector.
+After=multi-user.target coolercontrold.service
+# Give up after 3 restarts in 10 minutes rather than hammering a sick device.
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kraken-unleashed-daemon
+# Streaming without flow control once pushed this cooler into its bootloader, so
+# do not hammer it: the daemon exits non-zero when the device refuses frames, and
+# systemd gives up after 3 restarts in 10 minutes rather than retrying forever.
+Restart=on-failure
+RestartSec=30
+# Finish the frame in flight before exiting (never release the interface
+# mid-transfer -- that is exactly how the bootloader incident happened).
+KillSignal=SIGTERM
+TimeoutStopSec=15
+RuntimeDirectory=kraken-unleashed
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

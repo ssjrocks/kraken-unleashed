@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Command-line client for the Kraken Unleashed service.
+
+    kraken-unleashed-ctl status
+    kraken-unleashed-ctl effects
+    kraken-unleashed-ctl set led.effect=chase led.params.color=FF0000
+    kraken-unleashed-ctl preview /tmp/lcd.png
+"""
+import json
+import os
+import sys
+
+sys.path.insert(0, os.environ.get('KRAKEN_UNLEASHED_PREFIX', '/opt/kraken-unleashed'))
+from kraken_unleashed.control import Client
+
+
+def coerce(text):
+    """Turn a command-line value into the JSON type it obviously is."""
+    for cast in (int, float):
+        try:
+            return cast(text)
+        except ValueError:
+            pass
+    low = text.lower()
+    if low in ('true', 'false'):
+        return low == 'true'
+    if low in ('null', 'none'):
+        return None
+    return text
+
+
+def nest(path, value):
+    """"a.b.c", v  ->  {"a": {"b": {"c": v}}}"""
+    out = value
+    for key in reversed(path.split('.')):
+        out = {key: out}
+    return out
+
+
+def deep_update(base, overlay):
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def main(argv):
+    if not argv or argv[0] in ('-h', '--help'):
+        print(__doc__.strip())
+        return 0
+    client = Client(os.environ.get('KRAKEN_UNLEASHED_SOCKET',
+                                   '/run/kraken-unleashed/control.sock'))
+    cmd, args = argv[0], argv[1:]
+    try:
+        if cmd == 'set':
+            patch = {}
+            for pair in args:
+                if '=' not in pair:
+                    print(f'expected key=value, got {pair!r}', file=sys.stderr)
+                    return 2
+                key, _, value = pair.partition('=')
+                deep_update(patch, nest(key, coerce(value)))
+            result = client.call('set_config', patch=patch)
+        elif cmd == 'preview':
+            result = client.call('preview', path=args[0] if args else
+                                 '/tmp/kraken-unleashed-preview.png')
+        else:
+            result = client.call(cmd)
+    except (OSError, ConnectionError) as exc:
+        print(f'cannot reach the service: {exc}', file=sys.stderr)
+        print('is kraken-unleashed.service running?', file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2, default=str))
+    return 0 if result.get('ok') else 1
+
+
+sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.5" cy="0.38" r="0.75">
+      <stop offset="0" stop-color="#1f2430"/>
+      <stop offset="1" stop-color="#0d0e12"/>
+    </radialGradient>
+  </defs>
+  <!-- cooler body -->
+  <rect x="10" y="10" width="108" height="108" rx="26" fill="#15171e"/>
+  <!-- lit rim: the pump ring -->
+  <circle cx="64" cy="64" r="46" fill="none" stroke="url(#rim)" stroke-width="9"/>
+  <!-- the LCD itself -->
+  <circle cx="64" cy="64" r="38" fill="url(#glass)"/>
+  <!-- a readout, echoing the "All sensors" screen -->
+  <text x="64" y="68" font-family="DejaVu Sans, sans-serif" font-size="30"
+        font-weight="bold" fill="#ecedf1" text-anchor="middle">31</text>
+  <text x="64" y="86" font-family="DejaVu Sans, sans-serif" font-size="11"
+        fill="#8b8e98" text-anchor="middle">°C</text>
+  <circle cx="64" cy="40" r="3.5" fill="#7c3aed"/>
+</svg>
