@@ -1,0 +1,7 @@
+{
+    "color": "00FF00",
+    "period": 5.0,
+    "min_brightness": 0.0,
+    "max_brightness": 1.0,
+    "exclude": ["Kraken"]
+}

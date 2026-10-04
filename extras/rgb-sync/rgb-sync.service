@@ -1,0 +1,15 @@
+[Unit]
+Description=Synchronised RGB breathing across OpenRGB devices
+After=openrgb.service
+# Stop and restart together with the OpenRGB server.
+PartOf=openrgb.service
+
+[Service]
+ExecStart=/opt/rgb-sync/venv/bin/python /opt/rgb-sync/rgb_sync.py
+Restart=on-failure
+RestartSec=3
+# Only talks to the local SDK port, so no privileges are needed.
+DynamicUser=yes
+
+[Install]
+WantedBy=openrgb.service

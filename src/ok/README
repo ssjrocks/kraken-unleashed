@@ -1,0 +1,9 @@
+backend/lcd_render.py and resources/ are taken verbatim from OpenKraken
+(https://github.com/davidboulay/OpenKraken, MIT, see LICENSE-OpenKraken) so the
+"All sensors" (triple) screen matches it exactly. Only the compositing over a
+GIF background and the q565 streaming live in ../kraken_lcd.py.
+
+Local tweaks to backend/lcd_render.py (diverging from upstream):
+  - triple screen: liquid arc/track removed (the GIF background provides the rim)
+  - triple screen: vendor badges enlarged (size 20 -> 30)
+  - Intel badge blue brightened (0,113,197) -> (0,160,255)
