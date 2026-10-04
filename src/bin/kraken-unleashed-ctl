@@ -3,8 +3,10 @@
 
     kraken-unleashed-ctl status
     kraken-unleashed-ctl effects
+    kraken-unleashed-ctl styles
     kraken-unleashed-ctl set led.effect=chase led.params.color=FF0000
     kraken-unleashed-ctl preview /tmp/lcd.png
+    kraken-unleashed-ctl diagnose      check the device and drivers directly
 """
 import json
 import os
@@ -53,6 +55,16 @@ def main(argv):
     client = Client(os.environ.get('KRAKEN_UNLEASHED_SOCKET',
                                    '/run/kraken-unleashed/control.sock'))
     cmd, args = argv[0], argv[1:]
+
+    if cmd == 'diagnose':
+        # Deliberately does NOT go through the socket: this is the command you
+        # reach for when the service will not start, so it must not need it.
+        from kraken_unleashed.transport import diagnose
+        healthy, lines = diagnose()
+        print('\n'.join(lines))
+        print('\noverall:', 'OK' if healthy else 'PROBLEM')
+        return 0 if healthy else 1
+
     try:
         if cmd == 'set':
             patch = {}

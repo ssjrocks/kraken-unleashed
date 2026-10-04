@@ -8,8 +8,10 @@ import json
 import os
 import tempfile
 
-CONFIG_PATH = os.environ.get('KRAKEN_UNLEASHED_CONFIG', '/etc/kraken-unleashed.conf')
-LEGACY_PATH = '/etc/kraken-lcd.conf'
+from . import compat
+
+CONFIG_PATH = compat.config_path()
+LEGACY_PATH = compat.legacy_config_path()
 
 DEFAULTS = {
     'lcd': {
@@ -45,7 +47,8 @@ DEFAULTS = {
         # When this file exists its colour/period/brightness/gamma override the
         # params above, so the cooler breathes in exact phase with an rgb-sync
         # install driving the rest of the machine. null to ignore it.
-        'follow': '/etc/rgb-sync.json',
+        # rgb-sync is a Linux companion, so there is nothing to follow on Windows.
+        'follow': None if compat.IS_WINDOWS else '/etc/rgb-sync.json',
         'zones': {'ring': True, 'fans': True},
     },
     'openrgb': {
@@ -57,9 +60,12 @@ DEFAULTS = {
         'bind': '0.0.0.0',
     },
     'control': {
-        'socket': '/run/kraken-unleashed/control.sock',
-        # Group allowed to talk to the daemon. install.sh sets this to the
-        # installing user's group so the GUI works without a re-login.
+        # A Unix socket path on Linux, "host:port" on Windows. null means
+        # "whatever this platform uses by default", which is the usual case.
+        'socket': None,
+        # Group allowed to talk to the daemon on Linux. install.sh sets this to
+        # the installing user's group so the GUI works without a re-login.
+        # Ignored on Windows, where a token file is used instead.
         'group': None,
     },
 }
@@ -117,7 +123,8 @@ def migrate(raw):
 def load(path=None):
     """Config from *path*, else the legacy file, else the defaults."""
     config = defaults()
-    for candidate in ([path] if path else [CONFIG_PATH, LEGACY_PATH]):
+    candidates = [path] if path else [CONFIG_PATH, LEGACY_PATH]
+    for candidate in candidates:
         if not candidate or not os.path.exists(candidate):
             continue
         try:
@@ -126,6 +133,8 @@ def load(path=None):
             raise ValueError(f'{candidate}: not valid JSON ({exc})') from exc
         deep_update(config, migrate(raw))
         break
+    if not config['control'].get('socket'):
+        config['control']['socket'] = compat.control_endpoint()
     return config
 
 

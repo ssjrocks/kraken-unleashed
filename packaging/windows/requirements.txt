@@ -1,0 +1,8 @@
+numpy
+pillow
+pyusb
+hid
+psutil
+WMI
+pywin32
+pyinstaller

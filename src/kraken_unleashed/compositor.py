@@ -13,7 +13,19 @@ import sys
 
 from PIL import Image, ImageChops, ImageEnhance
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def _root():
+    """Directory holding the vendored renderer and assets/.
+
+    Normally the parent of this package. Under PyInstaller the tree is unpacked
+    somewhere temporary and sys._MEIPASS points at it, so resolving from
+    __file__ would look in a directory that does not exist.
+    """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+HERE = _root()
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from ok.backend.lcd_render import render, LcdData, _BG, _RENDERERS  # noqa: E402

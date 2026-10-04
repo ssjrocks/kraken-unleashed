@@ -14,10 +14,11 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Adw, Gio, GLib, Gtk, Gdk  # noqa: E402
 
+from .compat import control_endpoint, preview_path  # noqa: E402
 from .control import Client  # noqa: E402
 
 APP_ID = 'io.github.ssjrocks.KrakenUnleashed'
-PREVIEW_PATH = '/run/kraken-unleashed/preview.png'
+PREVIEW_PATH = preview_path()
 
 STYLE_LABELS = {
     'triple': 'All sensors',
@@ -575,8 +576,7 @@ class Application(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,
                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
-        self.client = Client(os.environ.get('KRAKEN_UNLEASHED_SOCKET',
-                                            '/run/kraken-unleashed/control.sock'))
+        self.client = Client(control_endpoint())
 
     def do_activate(self):
         window = self.props.active_window or Window(self, self.client)

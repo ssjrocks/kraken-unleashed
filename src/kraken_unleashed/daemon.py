@@ -15,17 +15,18 @@ import time
 
 from PIL import Image
 
+from . import compat
 from . import config as cfg
 from . import effects, q565, sacn
 from .compositor import Compositor, STYLES, default_background
 from .control import ControlServer
-from .device import (KrakenLCD, BootloaderMode, NotFound,
-                     MAX_CONSECUTIVE_FAILURES)
+from .device import (KrakenLCD, DeviceError, MAX_CONSECUTIVE_FAILURES)
 from .sensors import Sensors
 
 #: Published so other tools can read the cooler without opening the device.
-#: The kraken-lcd path is kept because existing exporters already read it.
-STATUS_PATHS = ('/run/kraken-unleashed/status.json', '/run/kraken-lcd/status.json')
+#: On Linux the older kraken-lcd path is kept too, because existing exporters
+#: already read it and an upgrade should not quietly break someone's dashboard.
+STATUS_PATHS = compat.status_paths()
 
 LED_COUNT = KrakenLCD.LEDS_PER_CHANNEL
 
@@ -187,7 +188,7 @@ class Daemon:
 
     def _h_preview(self, request):
         """Render one frame to a PNG. Never touches the device."""
-        path = request.get('path') or '/tmp/kraken-unleashed-preview.png'
+        path = request.get('path') or compat.preview_path()
         overrides = request.get('lcd') or {}
         with self.lock:
             lcd = dict(self.config['lcd'])
@@ -220,7 +221,7 @@ class Daemon:
 
         try:
             self.kraken = KrakenLCD()
-        except (BootloaderMode, NotFound) as exc:
+        except DeviceError as exc:
             print(exc, file=sys.stderr, flush=True)
             return 1
 
@@ -258,7 +259,7 @@ class Daemon:
 
                 # LEDs. CLOCK_BOOTTIME, not elapsed time, so effects stay in
                 # phase with rgb-sync on the rest of the machine.
-                ring, fans = self.led_colours(time.clock_gettime(time.CLOCK_BOOTTIME))
+                ring, fans = self.led_colours(compat.boot_clock())
                 if (ring, fans) != last_led:
                     self.kraken.set_leds(ring=ring, fans=fans)
                     last_led = (ring, fans)

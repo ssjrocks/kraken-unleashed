@@ -1,0 +1,108 @@
+name: Windows build
+
+# Builds the experimental Windows service + CLI with PyInstaller.
+# On a tag it attaches the zip to that release; otherwise it is kept as a
+# downloadable artifact so a change can be checked before it is published.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write          # needed to attach the zip to a release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r packaging/windows/requirements.txt
+
+      - name: Sanity-check the platform-independent code
+        # Catches a Linux-only import sneaking into a shared module, which is
+        # the most likely way this port breaks without anyone noticing.
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, 'src')
+          from kraken_unleashed import compat, effects, sacn, q565, config
+          assert compat.IS_WINDOWS, 'compat did not detect Windows'
+          print('config path :', compat.config_path())
+          print('runtime dir :', compat.runtime_dir())
+          print('control     :', compat.control_endpoint())
+          print('boot clock  :', compat.boot_clock())
+          cols = effects.render('rainbow', 1.5, 48, {'period': 5.0, 'max_brightness': 1.0})
+          assert len(cols) == 48
+          print('effects     :', ' '.join(sorted(effects.EFFECTS)))
+          "
+
+      - name: Test the sACN parser
+        run: |
+          python -c "
+          import sys, struct; sys.path.insert(0, 'src')
+          from kraken_unleashed import sacn
+          dmx = bytes([255,0,0, 0,255,0, 0,0,255] + [0]*503)
+          dmp = struct.pack('>HBB HH H', 0x7000|(10+1+len(dmx)), 0x02, 0xa1, 0, 1, 1+len(dmx)) + b'\x00' + dmx
+          fr  = struct.pack('>HI', 0x7000|(77+len(dmp)), 2) + b'test'.ljust(64, b'\x00') + struct.pack('>BHBB H', 100, 0, 1, 0, 1)
+          rt  = struct.pack('>HH', 0x0010, 0) + sacn.ACN_PID + struct.pack('>HI', 0x7000|(22+len(fr)+len(dmp)), 4) + b'\xaa'*16
+          uni, data = sacn.parse(rt + fr + dmp)
+          assert uni == 1 and list(data[:9]) == [255,0,0, 0,255,0, 0,0,255], (uni, data[:9])
+          print('sACN parser OK')
+          "
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm packaging/windows/kraken-unleashed.spec
+
+      - name: Check the executables actually run
+        run: |
+          dist\KrakenUnleashed\kraken-unleashed-ctl.exe --help
+          dist\KrakenUnleashed\kraken-unleashed-daemon.exe --list-effects
+          dist\KrakenUnleashed\kraken-unleashed-daemon.exe --list-styles
+          # No cooler on a CI runner, so diagnose is expected to report that it
+          # cannot find one. It must say so cleanly rather than crash.
+          dist\KrakenUnleashed\kraken-unleashed-ctl.exe diagnose; if ($LASTEXITCODE -ne 1) { throw "diagnose should exit 1 with no device, got $LASTEXITCODE" }
+          Write-Host "diagnose reported the missing device cleanly"
+
+      - name: Render a frame without a device
+        # Proves the vendored renderer and the bundled background survived
+        # freezing -- the most common PyInstaller failure for this project.
+        run: |
+          dist\KrakenUnleashed\kraken-unleashed-daemon.exe --preview preview.png
+          if (-not (Test-Path preview.png)) { throw "no preview was produced" }
+          $size = (Get-Item preview.png).Length
+          Write-Host "rendered preview.png ($size bytes)"
+          if ($size -lt 10000) { throw "preview looks empty" }
+
+      - name: Stage the package
+        run: |
+          Copy-Item packaging/windows/install-service.ps1   dist/KrakenUnleashed/
+          Copy-Item packaging/windows/uninstall-service.ps1 dist/KrakenUnleashed/
+          Copy-Item docs/WINDOWS.md  dist/KrakenUnleashed/README-WINDOWS.md
+          Copy-Item docs/CUSTOMISING.md dist/KrakenUnleashed/
+          Copy-Item LICENSE dist/KrakenUnleashed/
+          Compress-Archive -Path dist/KrakenUnleashed/* `
+                           -DestinationPath KrakenUnleashed-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KrakenUnleashed-windows-x64
+          path: KrakenUnleashed-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: KrakenUnleashed-windows-x64.zip

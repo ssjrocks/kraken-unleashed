@@ -3,17 +3,59 @@
 nvidia-smi takes tens of milliseconds to start, which would blow the frame
 budget on its own, so a daemon thread polls once a second and the render loop
 reads its last snapshot.
+
+Linux reads everything from /proc and /sys. Windows has no equivalent for CPU
+temperature without a kernel driver, so it is read from LibreHardwareMonitor's
+WMI provider when that is running, and reported as unavailable otherwise -- the
+screen then shows "--" rather than a wrong number.
 """
 import os
 import subprocess
 import threading
 import time
 
+from .compat import IS_WINDOWS
+
 #: hwmon driver names whose temp1_input is the CPU package/die temperature.
 _CPU_HWMON = ('coretemp', 'k10temp', 'zenpower')
 
+#: Windows: don't re-query WMI every second, it is slow and rarely changes fast.
+_WMI_INTERVAL = 5.0
 
-def cpu_temp():
+
+def _cpu_temp_windows(_cache={'at': 0.0, 'value': None}):
+    """CPU package temperature via LibreHardwareMonitor's WMI provider.
+
+    Windows exposes no usable CPU temperature to an unprivileged process.
+    LibreHardwareMonitor (or the older OpenHardwareMonitor) publishes one over
+    WMI when it is running, so use that if present and report nothing if not.
+    """
+    now = time.monotonic()
+    if now - _cache['at'] < _WMI_INTERVAL:
+        return _cache['value']
+    _cache['at'] = now
+    _cache['value'] = None
+    try:
+        import wmi
+    except ImportError:
+        return None
+    for namespace in ('root\\LibreHardwareMonitor', 'root\\OpenHardwareMonitor'):
+        try:
+            conn = wmi.WMI(namespace=namespace)
+            readings = [s for s in conn.Sensor()
+                        if s.SensorType == 'Temperature' and 'CPU' in (s.Name or '')]
+            # "CPU Package" is the one that matches what Linux calls Package id 0.
+            package = [s for s in readings if 'Package' in (s.Name or '')]
+            chosen = package or readings
+            if chosen:
+                _cache['value'] = float(chosen[0].Value)
+                return _cache['value']
+        except Exception:
+            continue
+    return None
+
+
+def _cpu_temp_linux():
     """Package temperature from hwmon, Intel or AMD."""
     for node in os.listdir('/sys/class/hwmon'):
         path = f'/sys/class/hwmon/{node}'
@@ -42,7 +84,18 @@ def cpu_temp():
     return None
 
 
+def cpu_temp():
+    return _cpu_temp_windows() if IS_WINDOWS else _cpu_temp_linux()
+
+
 def cpu_vendor():
+    if IS_WINDOWS:
+        name = (os.environ.get('PROCESSOR_IDENTIFIER') or '').lower()
+        if 'genuineintel' in name or 'intel' in name:
+            return 'intel'
+        if 'authenticamd' in name or 'amd' in name:
+            return 'amd'
+        return None
     try:
         info = open('/proc/cpuinfo').read()
         return 'intel' if 'GenuineIntel' in info else (
@@ -52,6 +105,8 @@ def cpu_vendor():
 
 
 def _amd_gpu_hwmon():
+    if IS_WINDOWS or not os.path.isdir('/sys/class/hwmon'):
+        return None
     for node in os.listdir('/sys/class/hwmon'):
         path = f'/sys/class/hwmon/{node}'
         try:
@@ -64,13 +119,18 @@ def _amd_gpu_hwmon():
 
 def detect_gpu():
     """Return ('nvidia'|'amd'|None, reader) where reader() -> (temp, load)."""
-    if subprocess.run(['which', 'nvidia-smi'], capture_output=True).returncode == 0:
+    import shutil
+    if shutil.which('nvidia-smi'):
         def read_nvidia():
             try:
                 out = subprocess.run(
                     ['nvidia-smi', '--query-gpu=temperature.gpu,utilization.gpu',
                      '--format=csv,noheader,nounits'],
-                    capture_output=True, text=True, timeout=5).stdout.strip()
+                    capture_output=True, text=True, timeout=5,
+                    # Without this a console window flashes once a second on
+                    # Windows when the daemon runs from a GUI session.
+                    creationflags=(subprocess.CREATE_NO_WINDOW
+                                   if IS_WINDOWS else 0)).stdout.strip()
                 if out:
                     temp, load = out.splitlines()[0].split(',')
                     return float(temp), float(load)
@@ -115,6 +175,8 @@ class Sensors(threading.Thread):
 
     @staticmethod
     def _read_stat():
+        if IS_WINDOWS:
+            return None                 # handled by psutil in run()
         try:
             values = [int(x) for x in open('/proc/stat').readline().split()[1:]]
             return sum(values), values[3] + values[4]      # total, idle + iowait
@@ -125,6 +187,12 @@ class Sensors(threading.Thread):
         while not self.stop_requested:
             temp = cpu_temp()
             load = None
+            if IS_WINDOWS:
+                try:
+                    import psutil
+                    load = psutil.cpu_percent(interval=None)
+                except Exception:
+                    load = None
             current = self._read_stat()
             if current and self._prev:
                 d_total = current[0] - self._prev[0]
