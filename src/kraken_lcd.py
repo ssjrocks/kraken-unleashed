@@ -54,7 +54,20 @@ MAX_PAYLOAD = 1_200_000          # refuse absurd frames rather than flood the de
 MAX_CONSECUTIVE_FAILURES = 3
 
 CONFIG_PATH = os.environ.get('KRAKEN_LCD_CONFIG', '/etc/kraken-lcd.conf')
-DEFAULT_GIF = os.path.join(HERE, 'assets', 'demo.gif')
+
+
+def _default_gif():
+    """The bundled background, whether installed or run straight from a clone.
+
+    install.sh puts it in assets/ beside this file; in the repo it lives one
+    level up, because src/ is what gets copied to /opt and the asset is shared
+    with the docs. Checking both means --preview works from a fresh clone.
+    """
+    for candidate in (os.path.join(HERE, 'assets', 'demo.gif'),
+                      os.path.join(os.path.dirname(HERE), 'assets', 'demo.gif')):
+        if os.path.exists(candidate):
+            return candidate
+    return os.path.join(HERE, 'assets', 'demo.gif')   # for the error message
 
 DEFAULTS = {
     'gif': None,            # None -> the bundled assets/demo.gif
@@ -564,7 +577,7 @@ def resolve(args):
     if args.no_leds:
         config['led']['enabled'] = False
     if not config['gif']:
-        config['gif'] = DEFAULT_GIF
+        config['gif'] = _default_gif()
     config['gif'] = os.path.expanduser(config['gif'])
     if not os.path.exists(config['gif']):
         sys.exit(f"background image not found: {config['gif']}")
