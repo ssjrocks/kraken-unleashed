@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 — 2026-10-05
+
+### Fixed
+- **`uninstall.sh` removed the 1.x install, not this one.** Wrong prefix, wrong
+  config, wrong units, and it left the binaries, desktop entry and icon behind.
+  It now removes the 2.0 install, clears 1.x leftovers too, and says what to
+  undo in OpenRGB and CoolerControl afterwards.
+- **The documentation was still 1.x throughout.** It told people to run
+  `/opt/kraken-lcd/kraken_lcd.py`, which 2.0 deletes — so the quickstart failed
+  on its first command. INSTALL, CUSTOMISING and TROUBLESHOOTING are rewritten
+  around the app, the CLI and the sectioned config; every command in them has
+  been run against real hardware.
+- RGB.md gained the section 2.0 shipped without: how to let OpenRGB drive the
+  cooler over E1.31, including that OpenRGB's E1.31 detector is probably
+  disabled if its detector list was ever trimmed.
 
 ### Changed
 - **Relicensed from MIT to GNU AGPL v3 or later.** Derivative works now have to
