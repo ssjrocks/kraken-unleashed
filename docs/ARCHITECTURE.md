@@ -10,26 +10,35 @@ hidraw node is shared state — liquidctl reads *whatever report arrives next*, 
 a command issued by another program lands in its reply.
 
 ```
-                      ┌──────────────────────────┐
-  CoolerControl ──X──▶│                          │
-  OpenRGB       ──X──▶│   Kraken 1e71:3012       │
-  liquidctl     ──X──▶│                          │
-                      │   hidraw  +  bulk 0x02   │
-  kraken-lcd ────────▶│                          │
-                      └────────────┬─────────────┘
-                                   │
-                        /run/kraken-lcd/status.json
-                                   │
-                    ┌──────────────┴──────────────┐
-                    ▼                             ▼
-            Home Assistant exporter        status bars, conky, ...
+   the app ───┐                    ┌──────────────────────────┐
+   the CLI ───┼── control socket ─▶│  kraken-unleashed-daemon │
+   OpenRGB ───┘      E1.31         │                          │
+                                   │   sole owner of:         │
+   CoolerControl ──X───────────────│   hidraw  +  bulk 0x02   │
+   liquidctl     ──X───────────────│                          │
+   OpenRGB direct──X───────────────└────────────┬─────────────┘
+                                                │
+                                                ▼
+                                       Kraken 1e71:3012
+                                                │
+                              /run/kraken-unleashed/status.json
+                              /run/kraken-lcd/status.json  (1.x path, kept)
+                                                │
+                              ┌─────────────────┴────────────┐
+                              ▼                              ▼
+                      Home Assistant exporter       status bars, conky, ...
 ```
+
+Note which arrows are blocked. OpenRGB cannot write to the device — but it
+*can* send E1.31 to the daemon, which relays it. The rule is never "OpenRGB is
+banned", it is "exactly one process holds the device".
 
 Because this service is the only thing reading the cooler, it publishes what it
 reads so nothing else has to open the device:
 
 ```json
-{"liquid": 31.4, "pump_rpm": 2280, "fan_rpm": 780, "ts": 1759553280.1}
+{"liquid": 31.4, "pump_rpm": 2280, "fan_rpm": 780, "ts": 1759553280.1,
+ "led_source": "effect"}
 ```
 
 `/run` is tmpfs, written atomically via rename, roughly once a second. Treat `ts`
@@ -52,11 +61,13 @@ curve-setting to this service. Neither is implemented here.
 
 ## The frame loop
 
-At 12 fps, every ~83 ms:
+The daemon runs one loop. At 12 fps, every ~83 ms:
 
 1. **Poll the cooler** (once a second, not every frame) for liquid temp and RPMs;
    publish to `status.json`.
 2. **Read host sensors** from a background thread's latest snapshot.
+2b. **Work out the LED colours** — from E1.31 if OpenRGB is sending, otherwise
+   from the effect engine.
 3. **Render the sensor overlay** — but only if a displayed value changed.
 4. **Pick the GIF frame** for the current playback position.
 5. **Composite**, rotate, encode to q565.
@@ -78,7 +89,7 @@ screen into something that is black everywhere except where there is content.
 Without that step you would paste an opaque square over the GIF.
 
 This is also why `_BG` must match the renderer's actual background — change one
-without the other and you get a visible rectangle. `kraken_lcd.py` imports `_BG`
+without the other and you get a visible rectangle. `compositor.py` imports `_BG`
 from the renderer for exactly this reason.
 
 ### Where the CPU went
@@ -125,26 +136,55 @@ see [PROTOCOL.md § 4](PROTOCOL.md#4-flow-control-and-the-way-this-device-breaks
 | Bootloader check at startup | Refuse to touch a device in recovery mode |
 | 1.2 MB payload cap | A bug in a renderer can't flood the endpoint |
 
-`kraken-lcd-resume.service` restarts the stream after suspend, because USB
+`kraken-unleashed-resume.service` restarts the stream after suspend, because USB
 re-enumerates on wake and the old handles are stale.
+
+## The control socket
+
+Everything that is not the daemon talks to it over a socket rather than opening
+the device: the app, the CLI, and anything you write. Newline-delimited JSON,
+one request per line.
+
+On Linux it is a Unix socket at `/run/kraken-unleashed/control.sock`, owned by
+root and restricted to a group the desktop user is in. On Windows it is a
+loopback TCP port guarded by a token file, because Windows Python's `AF_UNIX`
+support is patchy and binding to localhost is not an access control on its own —
+every process on the machine can reach it.
+
+Commands: `status`, `get_config`, `set_config`, `reload`, `effects`, `styles`,
+`preview`, `ping`. `preview` renders a frame to a PNG without going near the
+cooler, which is what makes the app's live preview free.
 
 ---
 
 ## Repository layout
 
 ```
-src/kraken_lcd.py          the program
+src/kraken_unleashed/      the package
+    daemon.py              the main loop and the control-socket handlers
+    device.py              the Kraken's protocol
+    transport.py           platform I/O: hidraw+libusb, or hidapi+WinUSB
+    compat.py              everything that differs between Linux and Windows
+    q565.py                the frame encoder
+    compositor.py          sensor readout over the background
+    effects.py             the LED effect engine
+    sacn.py                the E1.31 receiver (the OpenRGB relay)
+    control.py             the control server and its client
+    config.py              defaults, loading, migration, atomic saving
+    sensors.py             host CPU/GPU readings
+    gui.py                 the GTK4 app
+src/bin/                   the three entry points
 src/ok/                    vendored OpenKraken renderer (MIT) + its licence
-src/assets/demo.gif        default background, installed alongside the program
-systemd/                   the two unit files
-config/kraken-lcd.conf     the default config
-assets/                    demo GIF source + screenshots for the docs
-tools/make-demo-gif.py     regenerates the demo background
+systemd/                   the service and the resume unit
+packaging/                 desktop entry, icon, Windows spec and scripts
+assets/                    demo GIF + screenshots for the docs
+tools/                     make-demo-gif.py, gui-shot
 extras/rgb-sync/           optional companion daemon for everything else
 docs/                      this documentation
 ```
 
-`src/` is what gets copied to `/opt/kraken-lcd/`. Everything else is repo-only.
+`src/kraken_unleashed/` and `src/ok/` are copied to `/opt/kraken-unleashed/`, and
+`src/bin/*` to `/usr/bin/`. Everything else is repo-only.
 
 ## The vendored renderer
 

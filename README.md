@@ -78,30 +78,25 @@ with this.
 
 ## Making it yours
 
-Everything lives in `/etc/kraken-lcd.conf`:
+Open the app and change what you like — it shows a live preview of the screen,
+rendered **without touching the cooler**, so you can audition a background or
+layout instantly.
 
-```jsonc
-{
-    "gif": "/home/you/Pictures/my-loop.gif",  // null = the bundled demo
-    "style": "triple",                        // triple | liquid_ring | cpu_gpu
-    "dim": 0.4,                               // 0 = bright background, 1 = black
-    "rotate": 90,                             // match how your cooler is mounted
-    "fps": 12
-}
-```
+Everything is scriptable too, and applies immediately with no restart:
 
 ```bash
-sudo systemctl restart kraken-lcd
+kraken-unleashed-ctl set lcd.gif=~/Pictures/my-loop.gif
+kraken-unleashed-ctl set lcd.style=cpu_gpu lcd.dim=0.55
+kraken-unleashed-ctl set led.effect=rainbow led.params.period=8
+kraken-unleashed-ctl preview /tmp/lcd.png
+kraken-unleashed-ctl status
 ```
 
-Preview any combination without touching the cooler:
+Settings live in `/etc/kraken-unleashed.conf` if you would rather edit a file
+(then `sudo systemctl restart kraken-unleashed`).
 
-```bash
-python3 /opt/kraken-lcd/kraken_lcd.py --rotate 0 --preview /tmp/lcd.png
-```
-
-The full guide — picking a good GIF, the three layouts, changing colours and
-fonts, adding your own sensor screen — is in
+The full guide — picking a good GIF, the three layouts, the LED effects, changing
+colours and fonts, adding your own sensor screen or effect — is in
 [docs/CUSTOMISING.md](docs/CUSTOMISING.md).
 
 ## Documentation
@@ -125,11 +120,15 @@ temperature readings.
 - **CoolerControl** — disable the Kraken device in its UI. Fan and pump curves
   you set there stay in the cooler's firmware and keep working.
 - **OpenRGB** — disable the NZXT Kraken detector; this service drives those LEDs.
+  If you want OpenRGB controlling them anyway, turn on the **E1.31 relay** — it
+  works without OpenRGB ever touching the device. See [RGB.md](docs/RGB.md).
 - **liquidctl** — don't run it against this device while the service is up.
 
-The service publishes the cooler's readings to `/run/kraken-lcd/status.json` so
-other tools can read liquid temperature and pump/fan RPM without opening the
-device. See [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The service publishes the cooler's readings to
+`/run/kraken-unleashed/status.json` (and `/run/kraken-lcd/status.json`, the 1.x
+path, so existing exporters keep working) so other tools can read liquid
+temperature and pump/fan RPM without opening the device. See
+[ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Credits and licence
 

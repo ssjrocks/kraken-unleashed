@@ -1,64 +1,61 @@
-# Customising the display
+# Customising the display and lighting
 
-Everything on this page is changed in one file:
+Three ways to change things, all doing the same thing underneath:
 
-```bash
-sudo nano /etc/kraken-lcd.conf
-sudo systemctl restart kraken-lcd
-```
+- **The app** — `kraken-unleashed`, or "Kraken Unleashed" in your applications
+  menu. Everything here is in it, with a live preview.
+- **The command line** — `kraken-unleashed-ctl`, for scripting.
+- **The config file** — `/etc/kraken-unleashed.conf`.
 
-The file is JSON, except that lines starting with `//` are stripped before
-parsing, so it can explain itself.
+The app and the CLI apply changes **immediately**, with no restart. Editing the
+config file by hand needs `sudo systemctl restart kraken-unleashed`.
 
 ---
 
 ## Try before you commit
 
-You do not have to restart the service and squint at the cooler to see what a
-change does. The program can render exactly what it would send and write it to a
-PNG, **without opening the device at all**:
+You don't have to change anything to see what a change would look like. The
+service can render exactly what it would send and write it to a PNG, **without
+touching the device**:
 
 ```bash
-python3 /opt/kraken-lcd/kraken_lcd.py --rotate 0 --preview /tmp/lcd.png
+kraken-unleashed-ctl preview /tmp/lcd.png
 xdg-open /tmp/lcd.png
 ```
 
-Every option works with `--preview`, so you can audition a change in a second:
+The app's Display page shows this preview live and updates it as you move a
+slider, which is the easiest way to work.
+
+Without the service running at all — no root needed:
 
 ```bash
-python3 /opt/kraken-lcd/kraken_lcd.py --rotate 0 --preview /tmp/lcd.png \
-    --style cpu_gpu --gif ~/Pictures/loop.gif --dim 0.55 --ring FF0066
+kraken-unleashed-daemon --preview /tmp/lcd.png
 ```
-
-`--rotate 0` shows it the right way up on screen. Leave it out and you get the
-frame as actually transmitted, which is rotated to suit the cooler's mounting.
-
-Command-line options always win over the config file, so this never disturbs
-your installed settings. When you like what you see, write the same values into
-`/etc/kraken-lcd.conf` and restart.
 
 ---
 
 ## The background
 
-```jsonc
-"gif": "/home/you/Pictures/my-loop.gif"
+```bash
+kraken-unleashed-ctl set lcd.gif=/home/you/Pictures/my-loop.gif
+kraken-unleashed-ctl set lcd.gif=null      # back to the bundled demo
 ```
 
-Any animated GIF, or a still PNG/JPEG. `null` uses the bundled demo.
+In the app: **Display → Background → Choose…**
+
+Any animated GIF, or a still PNG/JPEG.
 
 **The one rule that matters: the middle should be dark.** The sensor readout is
 *lightened* over your background — bright pixels in the background win, and
 anything busy or pale behind the numbers makes them unreadable. GIFs built
-around a glowing rim, a dark vignette, or a transparent/black centre look
-fantastic. A full-frame bright animation looks like a mess.
+around a glowing rim, a dark vignette, or a black centre look fantastic. A
+full-frame bright animation looks like a mess.
 
 Other practical notes:
 
 - **Square.** It is resized to 640 × 640 regardless, so anything else gets
   squashed. The corners are not visible — the panel is a circle.
-- **Resolution.** 480 × 480 is plenty; it is upscaled and then dimmed. Going
-  higher mostly costs RAM.
+- **Resolution.** 480 × 480 is plenty; it is upscaled and then dimmed.
 - **Length.** Every frame is decoded and held in memory at startup. A 20-frame
   loop costs a few tens of MB; a 500-frame clip will hurt.
 - **Frame delays** are honoured, clamped to a 20 ms minimum.
@@ -67,8 +64,8 @@ If a GIF looks too busy, raise `dim` before giving up on it.
 
 ## Brightness of the background
 
-```jsonc
-"dim": 0.4
+```bash
+kraken-unleashed-ctl set lcd.dim=0.55
 ```
 
 `0` leaves the background at full brightness, `1` makes it black. The default
@@ -78,8 +75,9 @@ If a GIF looks too busy, raise `dim` before giving up on it.
 
 ## Which numbers are shown
 
-```jsonc
-"style": "triple"
+```bash
+kraken-unleashed-ctl set lcd.style=cpu_gpu
+kraken-unleashed-ctl styles          # list them
 ```
 
 | `triple` | `liquid_ring` | `cpu_gpu` |
@@ -92,39 +90,39 @@ with no NVIDIA GPU still gets a sensible screen.
 
 ## Getting it the right way up
 
-```jsonc
-"rotate": 90
+```bash
+kraken-unleashed-ctl set lcd.rotate=180
 ```
 
 Depends entirely on how your cooler sits on the CPU. Valid values are `0`, `90`,
-`180` and `270`. There is no clever way to detect it — try one, look at the
-cooler, try the next:
-
-```bash
-for r in 0 90 180 270; do
-  echo "trying $r"
-  sudo systemctl stop kraken-lcd
-  sudo python3 /opt/kraken-lcd/kraken_lcd.py --rotate $r --seconds 8
-done
-```
-
-Then put the winner in the config and `sudo systemctl start kraken-lcd`.
+`180`, `270`. There is no clever way to detect it — try each and keep what looks
+right. In the app it's a dropdown, which is quicker.
 
 ## Frame rate
 
-```jsonc
-"fps": 12
+```bash
+kraken-unleashed-ctl set lcd.fps=8
 ```
 
 12 is the practical ceiling for this panel and costs about 7% of one core. Lower
 it if you would rather have the CPU back — 8 still looks smooth, 4 is visibly
-steppy. Going above 12 does not help; the device will start refusing frames, and
-the code will stop rather than push through it.
+steppy. Going above 12 does not help; the device starts refusing frames, and the
+service stops rather than push through it.
+
+## Turning the screen off but keeping the lights
+
+```bash
+kraken-unleashed-ctl set lcd.enabled=false
+```
+
+The cooler keeps whatever was last sent. Note the firmware takes the screen back
+after a few seconds of silence and shows its own display — so this leaves the
+NZXT screen, not a blank one.
 
 ## The arc colour
 
-```jsonc
-"ring": "7C3AED"
+```bash
+kraken-unleashed-ctl set lcd.ring=FF0066
 ```
 
 Hex RRGGBB, used for the liquid-temperature arc. Only `liquid_ring` and
@@ -136,43 +134,116 @@ thresholds, whatever you set here.
 
 ---
 
-## The cooler's own LEDs
+## The cooler's lighting
+
+The pump ring and the radiator fans are 24 LEDs each, driven as one 48-LED
+strip so an effect travels across both.
+
+### Built-in effects
+
+```bash
+kraken-unleashed-ctl effects                              # list them
+kraken-unleashed-ctl set led.effect=chase led.params.color=FF0000
+```
+
+| Effect | What it does | Reads |
+|---|---|---|
+| `breathing` | raised cosine fade, gamma corrected | colour, period, min/max brightness, gamma |
+| `static` | one fixed colour | colour |
+| `pulse` | sharp flash with a slow decay | colour, period |
+| `spectrum` | whole ring cycles through hues together | period, brightness |
+| `rainbow` | rainbow wrapped around the ring, rotating | period, brightness, spread |
+| `wave` | one colour, brightness travelling round as a sine | colour, period, brightness, spread |
+| `chase` | a lit comet with a fading tail | colour, period, tail |
+| `gradient` | static blend between two colours | colour, second colour |
+| `temperature` | blue → red with the coolant temperature | min/max temperature, brightness |
+| `off` | LEDs black | — |
+
+The app shows only the knobs the chosen effect actually reads, so there are no
+sliders that do nothing.
+
+### Zones
+
+```bash
+kraken-unleashed-ctl set led.zones.ring=true led.zones.fans=false
+```
+
+Leave a zone off and the service doesn't write to it at all, so something else
+could — though nothing else can reach this cooler, so in practice this just
+freezes that zone on its last colour.
+
+### Letting OpenRGB drive it instead
+
+```bash
+kraken-unleashed-ctl set openrgb.enabled=true led.source=openrgb
+```
+
+OpenRGB cannot talk to this cooler directly, but the service can accept E1.31
+from it and relay it to the LEDs. Full setup — including the OpenRGB side — is in
+[RGB.md](RGB.md). When OpenRGB stops sending, the built-in effect takes over
+again rather than the lights freezing.
+
+### Staying in step with the rest of your lighting
 
 ```jsonc
-"led": {
-    "enabled": true,
-    "follow": "/etc/rgb-sync.json",
-    "color": "00FF00",
-    "period": 5.0,
-    "min_brightness": 0.0,
-    "max_brightness": 1.0,
-    "gamma": 2.2
+"follow": "/etc/rgb-sync.json"
+```
+
+If that file exists, its `color`, `period`, `min_brightness`, `max_brightness`
+and `gamma` override the effect parameters. That is how the cooler stays in exact
+step with [rgb-sync](RGB.md#rgb-sync) driving everything else — both read one
+file, and both compute the breath from `CLOCK_BOOTTIME`, which every process on
+the machine shares. No coordination, no drift. Set it to `null` if you aren't
+using rgb-sync.
+
+---
+
+## The config file
+
+`/etc/kraken-unleashed.conf` is JSON in sections. Whole lines starting with `//`
+are stripped before parsing, but **the app rewrites the file without comments**
+when you change something, so don't keep notes in there.
+
+```jsonc
+{
+    "lcd": {
+        "enabled": true,
+        "gif": null,            // null = the bundled demo
+        "style": "triple",      // triple | liquid_ring | cpu_gpu
+        "dim": 0.4,             // 0 = bright background, 1 = black
+        "ring": "7C3AED",
+        "fps": 12,
+        "rotate": 90            // 0 / 90 / 180 / 270
+    },
+    "led": {
+        "enabled": true,
+        "source": "effect",     // effect | openrgb | off
+        "effect": "breathing",
+        "params": { "color": "00FF00", "period": 5.0, "gamma": 2.2 },
+        "follow": "/etc/rgb-sync.json",
+        "zones": { "ring": true, "fans": true }
+    },
+    "openrgb": {
+        "enabled": false,
+        "universe": 1, "start_channel": 1, "port": 5568, "timeout": 2.0
+    },
+    "control": {
+        "socket": null,         // null = this platform's default
+        "group": "you"          // group allowed to talk to the service
+    }
 }
 ```
 
-The pump ring and the radiator fans breathe a single colour: `color` at the peak,
-fading to `min_brightness` and back every `period` seconds. `gamma` 2.2 makes the
-fade look even to the eye rather than mathematically even.
-
-Set `"enabled": false` to leave the LEDs alone entirely — useful if you would
-rather something else drove them, though note that most things can't; see
-[RGB.md](RGB.md).
-
-**`follow`** is the interesting one. If that file exists, its `color`, `period`,
-`min_brightness`, `max_brightness` and `gamma` are used instead of the values
-here. That is how the cooler stays in exact step with
-[rgb-sync](RGB.md#rgb-sync) driving the rest of your lighting — both read one
-file, and both compute the breath from `CLOCK_BOOTTIME`, which every process on
-the machine shares. No coordination, no drift. Set it to `null` if you are not
-using rgb-sync.
+`kraken-unleashed-ctl set` takes dotted paths matching this structure, so
+`led.params.color=00FF00` sets exactly what it looks like.
 
 ---
 
 ## Going further: editing the renderer
 
-The screens are drawn by `/opt/kraken-lcd/ok/backend/lcd_render.py`, vendored
-from [OpenKraken](https://github.com/davidboulay/OpenKraken). It is ordinary
-Pillow drawing code and it is meant to be edited.
+The screens are drawn by `/opt/kraken-unleashed/ok/backend/lcd_render.py`,
+vendored from [OpenKraken](https://github.com/davidboulay/OpenKraken). It is
+ordinary Pillow drawing code and it is meant to be edited.
 
 ### Colours
 
@@ -193,8 +264,8 @@ _GPU      = (52, 211, 153)    # GPU accents
 > **Don't change `_BG`.** Compositing works by subtracting the renderer's
 > background from the rendered screen, which leaves only the lit pixels to
 > lighten over your GIF. If `_BG` is not the actual background colour of the
-> rendered image, that subtraction leaves a visible rectangle. It is imported by
-> `kraken_lcd.py` for exactly this purpose.
+> rendered image, that subtraction leaves a visible rectangle. `compositor.py`
+> imports `_BG` for exactly this purpose.
 
 ### Thresholds
 
@@ -234,33 +305,41 @@ formatting.
 Keep content within `SAFE_RADIUS` of `CENTER` — the panel is a circle and the
 corners are simply not there.
 
-Then `"style": "mine"` in the config. Check it with `--preview` first; an
+Then `kraken-unleashed-ctl set lcd.style=mine`. Check it with a preview first; an
 exception in a renderer takes the service down.
 
-Verify your styles are registered with:
+### Writing your own effect
 
-```bash
-python3 /opt/kraken-lcd/kraken_lcd.py --list-styles
-```
+`/opt/kraken-unleashed/kraken_unleashed/effects.py`. An effect is a function
+`(t, count, params) -> [(r, g, b), ...]` of length `count`, registered in
+`EFFECTS`, with the knobs it reads listed in `PARAMS` so the app shows the right
+ones. `t` is seconds from the boot clock — use it rather than a per-process
+start time, or your effect won't stay in phase with anything else.
 
-> Edits to `lcd_render.py` live in `/opt/kraken-lcd/` and are **overwritten by
-> `install.sh`**. Make your changes in a clone of the repo (`src/ok/backend/`)
-> and install from there, so an upgrade keeps them.
+> Edits inside `/opt/` are **overwritten by `install.sh`**. Make changes in a
+> clone under `src/` and install from there so upgrades keep them.
 
 ---
 
-## All options at a glance
+## All settings at a glance
 
-| Config key | CLI | Default | Meaning |
+| Setting | CLI | Default | Meaning |
 |---|---|---|---|
-| `gif` | `--gif` | bundled demo | background image |
-| `style` | `--style` | `triple` | which readout |
-| `dim` | `--dim` | `0.4` | background dimming, 0–1 |
-| `ring` | `--ring` | `7C3AED` | liquid arc colour |
-| `fps` | `--fps` | `12` | frames per second |
-| `rotate` | `--rotate` | `90` | 0/90/180/270 |
-| `led.enabled` | `--no-leds` | `true` | drive the cooler's LEDs |
-| — | `--preview PATH` | — | render one frame to a file and exit |
-| — | `--seconds N` | `0` | run for N seconds then stop |
-| — | `--list-styles` | — | print available styles |
-| — | `--config PATH` | `/etc/kraken-lcd.conf` | use a different config |
+| `lcd.enabled` | `set lcd.enabled=` | `true` | draw the sensor screen |
+| `lcd.gif` | `set lcd.gif=` | bundled demo | background image |
+| `lcd.style` | `set lcd.style=` | `triple` | which readout |
+| `lcd.dim` | `set lcd.dim=` | `0.4` | background dimming, 0–1 |
+| `lcd.ring` | `set lcd.ring=` | `7C3AED` | liquid arc colour |
+| `lcd.fps` | `set lcd.fps=` | `12` | frames per second |
+| `lcd.rotate` | `set lcd.rotate=` | `90` | 0/90/180/270 |
+| `led.enabled` | `set led.enabled=` | `true` | drive the cooler's LEDs |
+| `led.source` | `set led.source=` | `effect` | `effect` / `openrgb` / `off` |
+| `led.effect` | `set led.effect=` | `breathing` | which effect |
+| `led.params.*` | `set led.params.color=` | — | effect knobs |
+| `led.zones.*` | `set led.zones.ring=` | `true` | which zones to drive |
+| `led.follow` | `set led.follow=` | `/etc/rgb-sync.json` | shared settings file |
+| `openrgb.enabled` | `set openrgb.enabled=` | `false` | accept E1.31 |
+| `openrgb.universe` | `set openrgb.universe=` | `1` | sACN universe |
+| `openrgb.timeout` | `set openrgb.timeout=` | `2.0` | seconds before falling back |
+
+Other CLI commands: `status`, `effects`, `styles`, `preview PATH`, `diagnose`.

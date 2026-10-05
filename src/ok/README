@@ -1,7 +1,7 @@
 backend/lcd_render.py and resources/ are taken verbatim from OpenKraken
 (https://github.com/davidboulay/OpenKraken, MIT, see LICENSE-OpenKraken) so the
 "All sensors" (triple) screen matches it exactly. Only the compositing over a
-GIF background and the q565 streaming live in ../kraken_lcd.py.
+GIF background and the q565 streaming live in ../kraken_unleashed/.
 
 Local tweaks to backend/lcd_render.py (diverging from upstream):
   - triple screen: liquid arc/track removed (the GIF background provides the rim)

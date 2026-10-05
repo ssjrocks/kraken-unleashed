@@ -35,8 +35,15 @@ Needs OpenRGB installed and `openrgb --server` running.
 ```
 
 `exclude` is a list of case-insensitive substrings of device names to leave
-alone. **Keep "Kraken" in it** — OpenRGB cannot drive that cooler, and trying
-corrupts other software's status reads. See [../../docs/RGB.md](../../docs/RGB.md).
+alone. **Keep "Kraken" in it** — OpenRGB cannot drive that cooler directly, and
+trying corrupts other software's status reads.
+
+One wrinkle: if you turn on Kraken Unleashed's **E1.31 relay**, OpenRGB gains a
+device called *Kraken Unleashed*, and the `"Kraken"` pattern matches that too, so
+rgb-sync skips it. That is usually what you want — the cooler is already in phase
+via the shared config and the boot clock. If you would rather rgb-sync drove the
+cooler through OpenRGB as well, narrow the pattern, and pick one sync route
+rather than running both. See [../../docs/RGB.md](../../docs/RGB.md).
 
 ```bash
 sudo systemctl restart rgb-sync kraken-lcd

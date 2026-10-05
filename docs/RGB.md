@@ -1,11 +1,13 @@
 # Lighting: the cooler's LEDs, and keeping everything in step
 
-Two separate problems live here:
+Three things live here:
 
 1. **Driving the Kraken's own ring and fan LEDs**, which OpenRGB cannot do on
    this firmware. Kraken Unleashed does it itself.
-2. **Keeping them in phase with the rest of your lighting**, which is solved
-   without the two programs talking to each other at all.
+2. **Letting OpenRGB drive them anyway**, through a relay that never has OpenRGB
+   touch the device.
+3. **Keeping everything in phase**, which is solved without the programs talking
+   to each other at all.
 
 ---
 
@@ -54,7 +56,88 @@ every frame — is reliable.
 
 ---
 
-## 2. Staying in phase without coordination
+## 2. Letting OpenRGB drive the cooler
+
+OpenRGB cannot reach this cooler, and that is a firmware fact, not a bug anyone
+can fix in software. But OpenRGB already speaks **E1.31 (sACN)** — it ships an
+E1.31 device type for network-attached lighting. So Kraken Unleashed listens for
+E1.31 and relays it to the LEDs.
+
+The result: the cooler shows up in OpenRGB as a normal device, every OpenRGB
+effect and profile works on it, and **OpenRGB still never touches the hardware**.
+One process holds the device, as always.
+
+A plugin would not have worked, incidentally: OpenRGB loads plugins only in its
+GUI, never in the headless server, so a plugin would be useless to an always-on
+setup.
+
+### Turn the relay on
+
+```bash
+kraken-unleashed-ctl set openrgb.enabled=true led.source=openrgb
+```
+
+Or, in the app: **OpenRGB → Accept lighting from OpenRGB**, and set **Lighting →
+Colours come from** to *OpenRGB*.
+
+### Set it up in OpenRGB
+
+1. **Settings → E1.31 Devices**, add a device:
+
+   | Field | Value |
+   |---|---|
+   | Name | `Kraken Unleashed` |
+   | IP (Unicast) | `127.0.0.1` |
+   | Start universe | `1` |
+   | Start channel | `1` |
+   | Number of LEDs | `48` |
+   | Type | Single / Linear |
+
+2. **Settings → General → Detectors**: make sure **E1.31** is enabled. This one
+   catches people out — if you have ever trimmed OpenRGB's detector list, E1.31
+   was almost certainly turned off with everything else, and the device simply
+   will not appear.
+
+3. Restart OpenRGB.
+
+"Kraken Unleashed" now appears in `openrgb --list-devices`. The first 24 LEDs are
+the pump ring, the next 24 are the radiator fans.
+
+### Checking it
+
+```bash
+kraken-unleashed-ctl status
+```
+
+```json
+"openrgb": {
+    "listening": true, "universe": 1, "port": 5568,
+    "packets": 51, "source": "127.0.0.1", "live": true
+}
+```
+
+`packets` climbing and `live: true` means it is working. The app's OpenRGB page
+shows the same thing with a status light.
+
+### When OpenRGB stops
+
+OpenRGB sends a keepalive about once a second, so the service can tell "OpenRGB
+is connected" from "OpenRGB is gone". After `openrgb.timeout` seconds of silence
+(2 by default) the built-in effect takes over again — closing OpenRGB leaves the
+cooler breathing, not frozen on whatever colour was last sent.
+
+### A wrinkle if you use rgb-sync
+
+rgb-sync excludes devices whose name matches anything in its `exclude` list,
+which defaults to `["Kraken"]`. The new OpenRGB device is called **Kraken
+Unleashed**, so that pattern matches it too and rgb-sync will skip it. If you
+want rgb-sync driving the cooler through OpenRGB along with everything else,
+narrow the pattern — and note that then you have two valid ways to sync the
+cooler and should pick one, not both.
+
+---
+
+## 3. Staying in phase without coordination
 
 The cooler's LEDs are driven by Kraken Unleashed. Everything else — RAM, GPU,
 motherboard headers, case fans — is typically driven by OpenRGB. Two independent
@@ -83,7 +166,7 @@ spending most of its time looking bright.
 
 ---
 
-## 3. rgb-sync
+## 4. rgb-sync
 
 `extras/rgb-sync/` holds the companion daemon that drives everything *except* the
 cooler, through OpenRGB's SDK. It is optional — Kraken Unleashed works without
@@ -108,7 +191,7 @@ to the most interesting bug in this project.
 
 ---
 
-## 4. The Kingston Fury DDR5 desync, and what it teaches
+## 5. The Kingston Fury DDR5 desync, and what it teaches
 
 **Symptom:** with everything breathing green, one RAM stick would visibly lag the
 other three by roughly half a second, intermittently, worst when the breath was
@@ -168,7 +251,7 @@ block write each, ~0.36 ms apiece. The host was never the phase problem.
 
 ---
 
-## 5. OpenRGB gotchas worth knowing
+## 6. OpenRGB gotchas worth knowing
 
 Collected the hard way.
 
@@ -202,7 +285,7 @@ run both; they fight.
 
 ---
 
-## 6. Motherboard-specific note: ASUS ROG Maximus Z890
+## 7. Motherboard-specific note: ASUS ROG Maximus Z890
 
 Not required for Kraken Unleashed, recorded because it cost a day.
 
