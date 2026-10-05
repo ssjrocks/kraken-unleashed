@@ -4,6 +4,8 @@ The daemon owns this file and the GUI edits it through the control socket, so
 writes have to be atomic -- a half-written config read by a restarting daemon
 would be worse than a stale one.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import json
 import os
 import tempfile

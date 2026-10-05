@@ -13,6 +13,8 @@ Packet layout (E1.31-2016): root layer 38 bytes, framing layer 77, DMP layer
 header 10, then a start code byte, so DMX channel 1 is at offset 126. The
 universe is a big-endian uint16 at offset 113.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import socket
 import struct
 import threading

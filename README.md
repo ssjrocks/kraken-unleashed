@@ -133,12 +133,18 @@ device. See [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Credits and licence
 
-MIT — see [LICENSE](LICENSE).
+**GNU AGPL v3 or later** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+In short: you can use, modify and redistribute this, but derivative works have
+to stay open under the same licence. If you run a modified version where others
+interact with it over a network, you have to offer them its source too.
 
 The sensor-screen renderer in `src/ok/` is vendored from
-[OpenKraken](https://github.com/davidboulay/OpenKraken) by David Boulay (MIT),
-with three small changes noted in [src/ok/README](src/ok/README). Credit for how
-these screens look belongs there.
+[OpenKraken](https://github.com/davidboulay/OpenKraken) by David Boulay and
+stays under its original **MIT** licence (MIT is AGPL-compatible, so the
+combined work ships under the AGPL without relicensing OpenKraken's code). Three
+small changes are noted in [src/ok/README](src/ok/README). Credit for how these
+screens look belongs there.
 
 The protocol work stands on [liquidctl](https://github.com/liquidctl/liquidctl)'s
 KrakenZ3 driver for the bucket path and the device's command vocabulary.

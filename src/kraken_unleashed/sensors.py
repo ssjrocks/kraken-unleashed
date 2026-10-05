@@ -9,6 +9,8 @@ temperature without a kernel driver, so it is read from LibreHardwareMonitor's
 WMI provider when that is running, and reported as unavailable otherwise -- the
 screen then shows "--" rather than a wrong number.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import os
 import subprocess
 import threading

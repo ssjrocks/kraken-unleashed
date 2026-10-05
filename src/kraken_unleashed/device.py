@@ -11,6 +11,8 @@ bootloader, which needs the PSU switched off at the wall to clear. Wait for each
 ack, pace the frames, stop after repeated refusals, and never release the
 interface mid-transfer.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import struct
 import time
 

@@ -8,6 +8,8 @@ Three decisions here account for most of the difference between "works" and
     changes -- the readout moves about once a second, not twelve times
   * the q565 encoder is vectorised (see q565.py)
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import os
 import sys
 

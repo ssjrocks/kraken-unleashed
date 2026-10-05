@@ -4,6 +4,8 @@ Linux is the reference platform. Windows support is newer and marked
 experimental; everything that differs between them lives here rather than being
 sprinkled through the daemon as `if sys.platform` checks.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import os
 import sys
 import time

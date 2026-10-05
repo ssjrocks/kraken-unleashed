@@ -4,6 +4,8 @@ The GUI never touches the cooler. It is a client of the daemon's control
 socket, which is the only process allowed to hold the device. Everything here
 is "read the config, show it, send a patch back".
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import os
 import sys
 import time
@@ -583,7 +585,7 @@ class Window(Adw.ApplicationWindow):
                       'manages.'),
             website='https://github.com/ssjrocks/kraken-unleashed',
             issue_url='https://github.com/ssjrocks/kraken-unleashed/issues',
-            license_type=Gtk.License.MIT_X11)
+            license_type=Gtk.License.AGPL_3_0)
         about.add_credit_section('Sensor screens from', ['OpenKraken by David Boulay'])
         about.present(self)
 

@@ -7,6 +7,8 @@ Anything busy or pale in the middle third will fight the numbers for attention.
 
 Run from the repo root:  python3 tools/make-demo-gif.py assets/demo.gif
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import sys
 
 import numpy as np

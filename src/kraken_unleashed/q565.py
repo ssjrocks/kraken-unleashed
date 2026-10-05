@@ -6,6 +6,8 @@ all-black frame -- RUN (0xc0 | len-1, len <= 62) and literal (0xfe + uint16 LE
 RGB565). The INDEX/DIFF/LUMA range exists but was never decoded; it is not
 needed to write to the device. See docs/PROTOCOL.md.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import struct
 
 import numpy as np

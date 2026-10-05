@@ -5,6 +5,8 @@ socket so the GUI can change things live without a restart. Nothing else may
 open the device -- see docs/ARCHITECTURE.md for why that rule exists and what
 breaks when it is broken.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import argparse
 import json
 import os

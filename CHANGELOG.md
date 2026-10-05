@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Relicensed from MIT to GNU AGPL v3 or later.** Derivative works now have to
+  stay open under the same terms, including when a modified version is offered
+  to others over a network. Releases already published under MIT (v1.0.0,
+  v2.0.0) remain MIT — a licence cannot be withdrawn from what was already
+  distributed.
+- The vendored sensor-screen renderer in `src/ok/` **stays under its original
+  MIT licence** from OpenKraken. MIT is AGPL-compatible, so the combined work
+  ships under the AGPL without relicensing anyone else's code. See
+  [NOTICE](NOTICE).
+
+### Removed
+- The 1.x entry point `src/kraken_lcd.py` and the retired `kraken-lcd` systemd
+  units. Unreferenced since 2.0, and the entry point still claimed MIT.
+
 ## 2.0.0 — 2026-10-05
 
 Kraken Unleashed becomes an application rather than a single-purpose streamer.

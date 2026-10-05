@@ -9,6 +9,8 @@ for the rest of your lighting, with nothing passing between them.
 Colours are plain RGB here. The GRB byte order the cooler wants is applied once,
 at the device layer, so nothing in this file has to think about it.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import colorsys
 import math
 

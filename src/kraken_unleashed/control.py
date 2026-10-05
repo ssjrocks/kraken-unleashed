@@ -15,6 +15,8 @@ and mode. Windows Python's AF_UNIX support is patchy, so there it is a loopback
 TCP port guarded by a token file -- binding to 127.0.0.1 is not an access
 control on its own, since any process on the machine can connect to it.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import json
 import os
 import secrets

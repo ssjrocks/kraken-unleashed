@@ -149,8 +149,9 @@ docs/                      this documentation
 ## The vendored renderer
 
 `src/ok/` is taken verbatim from
-[OpenKraken](https://github.com/davidboulay/OpenKraken) (MIT) so the screens match
-it exactly, with three deliberate changes recorded in `src/ok/README`:
+[OpenKraken](https://github.com/davidboulay/OpenKraken) (MIT, and it stays MIT —
+see [NOTICE](../NOTICE)) so the screens match it exactly, with three deliberate
+changes recorded in `src/ok/README`:
 
 - the `triple` screen's liquid arc and track removed — the background GIF
   provides the rim instead

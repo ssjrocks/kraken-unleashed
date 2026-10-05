@@ -14,6 +14,8 @@ is no need to take the whole device away from the HID stack. See docs/WINDOWS.md
 Every transport exposes the same four operations the device layer needs:
 hid_write, hid_read, hid_drain and bulk_write.
 """
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import os
 import sys
 import time
