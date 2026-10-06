@@ -32,6 +32,16 @@ SOURCE_LABELS = [
     ('openrgb', 'OpenRGB (E1.31)'),
     ('off', 'Off'),
 ]
+COOLING_MODES = [
+    ('default', 'Quiet default'),
+    ('curve', 'Custom curve'),
+    ('full', 'Maximum'),
+    ('firmware', "Don't manage cooling"),
+]
+#: Temperatures the editable curve has a point for. Four is enough to shape a
+#: sensible curve without turning this page into a graph editor.
+CURVE_TEMPS = (20, 30, 40, 50)
+
 EFFECT_LABELS = {
     'breathing': 'Breathing', 'static': 'Static', 'pulse': 'Pulse',
     'spectrum': 'Spectrum cycle', 'rainbow': 'Rainbow', 'wave': 'Wave',
@@ -49,6 +59,28 @@ PARAM_SPECS = {
     'temp_min': ('Coolest temperature', 10.0, 60.0, 1.0, 0, 'Fully blue at or below'),
     'temp_max': ('Hottest temperature', 20.0, 90.0, 1.0, 0, 'Fully red at or above'),
 }
+
+
+#: Starting points for a custom curve, if the config has none.
+CURVE_DEFAULTS = {
+    'pump': [[20, 50], [30, 60], [40, 80], [50, 100]],
+    'fan': [[20, 30], [30, 40], [40, 65], [50, 100]],
+}
+
+
+def _interp(points, temp):
+    """Duty at *temp* from sorted (temp, duty) pairs; flat outside the range."""
+    if not points:
+        return 50
+    lower = points[0]
+    for upper in points:
+        if upper[0] > temp:
+            if upper[0] == lower[0]:
+                return upper[1]
+            span = upper[0] - lower[0]
+            return round(lower[1] + (temp - lower[0]) * (upper[1] - lower[1]) / span)
+        lower = upper
+    return points[-1][1]
 
 
 def hex_to_rgba(value):
@@ -107,6 +139,8 @@ class Window(Adw.ApplicationWindow):
                                         'Display', 'video-display-symbolic')
         self.stack.add_titled_with_icon(self._lighting_page(), 'lighting',
                                         'Lighting', 'weather-clear-symbolic')
+        self.stack.add_titled_with_icon(self._cooling_page(), 'cooling',
+                                        'Cooling', 'temperature-symbolic')
         self.stack.add_titled_with_icon(self._openrgb_page(), 'openrgb',
                                         'OpenRGB', 'network-transmit-symbolic')
 
@@ -322,6 +356,98 @@ class Window(Adw.ApplicationWindow):
         page.add(group)
         return page
 
+    def _cooling_page(self):
+        page = Adw.PreferencesPage()
+
+        group = Adw.PreferencesGroup(
+            title='Pump and fan',
+            description='The curve is uploaded to the cooler, which then runs it '
+                        'by itself — so it keeps working even if this service '
+                        'stops.')
+        self.cooling_mode = Adw.ComboRow(
+            title='Cooling',
+            model=Gtk.StringList.new([label for _, label in COOLING_MODES]))
+        self.cooling_mode.connect('notify::selected', self._on_change)
+        group.add(self.cooling_mode)
+
+        self.cooling_note = Adw.ActionRow(title='', subtitle='')
+        self.cooling_note.set_subtitle_lines(3)
+        self.cooling_note.add_prefix(
+            Gtk.Image(icon_name='dialog-information-symbolic',
+                      valign=Gtk.Align.START, margin_top=14))
+        group.add(self.cooling_note)
+
+        self.cooling_live = Adw.ActionRow(title='Right now', subtitle='—')
+        group.add(self.cooling_live)
+        page.add(group)
+
+        self.curve_rows = {}
+        for channel, title, note in (
+                ('pump', 'Pump curve',
+                 'Duty at each liquid temperature. The cooler enforces a 20% '
+                 'floor on the pump, whatever you set here.'),
+                ('fan', 'Radiator fan curve',
+                 'Duty at each liquid temperature. 0% stops the fans entirely.')):
+            group = Adw.PreferencesGroup(title=title, description=note)
+            self.curve_rows[channel] = {}
+            for temp in CURVE_TEMPS:
+                row = Adw.SpinRow.new_with_range(0, 100, 5)
+                row.set_title(f'At {temp} °C')
+                row.set_digits(0)
+                row.connect('notify::value', self._on_change)
+                self.curve_rows[channel][temp] = row
+                group.add(row)
+            self.curve_rows[channel]['group'] = group
+            page.add(group)
+
+        group = Adw.PreferencesGroup(title='Safety')
+        label = Gtk.Label(
+            xalign=0, wrap=True, selectable=True, margin_top=12, margin_bottom=12,
+            margin_start=12, margin_end=12,
+            label=('Whatever you draw, a <b>100% at 59 °C</b> point is always '
+                   'added before the curve is uploaded, so a careless curve '
+                   'cannot leave the loop climbing with the pump idling. Above '
+                   '59 °C the cooler takes over regardless.\n\n'
+                   'Nothing here can exceed what the cooler already allows — '
+                   'the pump floor and the temperature range are the firmware\'s.'))
+        label.set_use_markup(True)
+        frame = Gtk.Frame(child=label)
+        frame.add_css_class('view')
+        group.add(frame)
+        page.add(group)
+        return page
+
+    def _curve_from_rows(self, channel):
+        return [[temp, int(self.curve_rows[channel][temp].get_value())]
+                for temp in CURVE_TEMPS]
+
+    def _update_cooling_visibility(self):
+        mode = COOLING_MODES[self.cooling_mode.get_selected()][0]
+        for channel in ('pump', 'fan'):
+            self.curve_rows[channel]['group'].set_visible(mode == 'curve')
+        notes = {
+            'default': ('A quiet curve, uploaded to the cooler',
+                        'Modelled on what a Kraken 2024 Elite does on its '
+                        'shipped curve — about 39% pump and 26% fan at 32 °C — '
+                        'then ramping to full before the critical temperature. '
+                        'It is a preset, not a factory restore: the protocol '
+                        'has no way to ask the cooler for its original curve.'),
+            'curve': ('Your curve is in control',
+                      'The points below are uploaded to the cooler whenever you '
+                      'change them.'),
+            'full': ('Pump and fans at 100% constantly',
+                     'Maximum cooling and maximum noise. Useful for testing or '
+                     'a heavy benchmark run.'),
+            'firmware': ('Nothing here is managing the cooler',
+                         'It keeps running whatever curve was last written to '
+                         'it. If you have used any of the modes above, that is '
+                         'the curve it keeps — this does not restore the one it '
+                         'shipped with. Pick Quiet default for that.'),
+        }
+        title, subtitle = notes[mode]
+        self.cooling_note.set_title(title)
+        self.cooling_note.set_subtitle(subtitle)
+
     # -- loading and saving ------------------------------------------------- #
 
     def refresh_all(self):
@@ -344,6 +470,7 @@ class Window(Adw.ApplicationWindow):
         try:
             lcd, led, orgb = (self.config['lcd'], self.config['led'],
                               self.config['openrgb'])
+            self.config.setdefault('cooling', {'mode': 'firmware'})
 
             styles = self.meta['styles']
             self.style_row.set_model(Gtk.StringList.new(
@@ -381,6 +508,23 @@ class Window(Adw.ApplicationWindow):
                     row.set_value(float(params[key]))
             self.follow_row.set_text(led.get('follow') or '')
 
+            cool = self.config['cooling']
+            modes = [key for key, _ in COOLING_MODES]
+            self.cooling_mode.set_selected(modes.index(cool.get('mode', 'firmware'))
+                                           if cool.get('mode') in modes else 3)
+            for channel in ('pump', 'fan'):
+                points = dict((int(t), int(d)) for t, d in
+                              (cool.get(channel) or CURVE_DEFAULTS[channel]))
+                for temp, row in self.curve_rows[channel].items():
+                    if temp == 'group':
+                        continue
+                    if temp in points:
+                        row.set_value(points[temp])
+                    else:
+                        # The config may carry points at other temperatures; show
+                        # the interpolated value rather than a stale one.
+                        row.set_value(_interp(sorted(points.items()), temp))
+
             self.orgb_enabled.set_active(bool(orgb['enabled']))
             self.universe_row.set_value(float(orgb['universe']))
             self.channel_row.set_value(float(orgb['start_channel']))
@@ -389,6 +533,7 @@ class Window(Adw.ApplicationWindow):
         finally:
             self._loading = False
         self._update_param_visibility()
+        self._update_cooling_visibility()
 
     def _update_param_visibility(self):
         """Show only the knobs the chosen effect actually reads."""
@@ -412,6 +557,7 @@ class Window(Adw.ApplicationWindow):
         if self._loading:
             return
         self._update_param_visibility()
+        self._update_cooling_visibility()
         names = self.meta['effects']
         index = self.effect_row.get_selected()
         styles = self.meta['styles']
@@ -440,6 +586,11 @@ class Window(Adw.ApplicationWindow):
                      for k, r in self._param_rows.items()},
                     color=rgba_to_hex(self.colour_btn.get_rgba()),
                     color2=rgba_to_hex(self.colour2_btn.get_rgba())),
+            },
+            'cooling': {
+                'mode': COOLING_MODES[self.cooling_mode.get_selected()][0],
+                'pump': self._curve_from_rows('pump'),
+                'fan': self._curve_from_rows('fan'),
             },
             'openrgb': {
                 'enabled': self.orgb_enabled.get_active(),
@@ -548,6 +699,15 @@ class Window(Adw.ApplicationWindow):
             f"      CPU {fmt(sens.get('cpu_temp'), '°C')} / {fmt(sens.get('cpu_load'), '%')}"
             f"   GPU {fmt(sens.get('gpu_temp'), '°C')} / {fmt(sens.get('gpu_load'), '%')}"
             f"      {stats['fps']:.1f} fps, {stats['refused']} refused")
+
+        cool = status.get('cooling') or {}
+        liquid = dev.get('liquid')
+        bits = [f"mode: {cool.get('configured', '?')}"]
+        if isinstance(liquid, (int, float)):
+            bits.append(f'coolant {liquid:.1f} °C')
+        bits.append(f"pump {fmt(dev.get('pump_rpm'))} rpm")
+        bits.append(f"fans {fmt(dev.get('fan_rpm'))} rpm")
+        self.cooling_live.set_subtitle('   '.join(bits))
 
         orgb = status['openrgb']
         if not orgb.get('listening'):

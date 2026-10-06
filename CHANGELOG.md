@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Pump and fan control**, with a Cooling page in the app. Four modes:
+  `firmware` (write nothing — still the default, so upgrades change nothing),
+  `default` (a quiet preset), `curve` (four editable points per channel) and
+  `full`. The curve is uploaded to the cooler, which then runs it itself, so it
+  keeps working if the service stops.
+- A `(59 °C, 100%)` failsafe point is appended to every curve before upload, and
+  duties are clamped to the firmware's own limits (20% pump floor).
+- `kraken-unleashed-ctl set` now accepts JSON values, so curves can be set from
+  the shell: `set 'cooling.pump=[[20,40],[50,100]]'`.
+
+### Fixed
+- An invalid cooling curve is rejected before it is written to the config.
+  Previously a malformed value was persisted and then failed to apply on every
+  start, silently and forever.
+
 ## 2.0.1 — 2026-10-05
 
 ### Fixed

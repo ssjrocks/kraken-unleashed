@@ -198,6 +198,55 @@ using rgb-sync.
 
 ---
 
+## Pump and fan curves
+
+The **Cooling** page in the app, or:
+
+```bash
+kraken-unleashed-ctl set cooling.mode=default
+```
+
+| Mode | What it does |
+|---|---|
+| `firmware` | **The default.** Writes nothing; the cooler keeps whatever curve it has. |
+| `default` | A quiet preset — about 39% pump and 26% fan at 32 °C, ramping to full before the critical temperature. |
+| `curve` | Your own curve, from the points below. |
+| `full` | Pump and fans at 100% constantly. |
+
+The curve is **uploaded to the cooler**, which then runs it itself. That matters:
+if this service stops, is killed, or never starts, your curve keeps working.
+
+```bash
+kraken-unleashed-ctl set 'cooling.pump=[[20,40],[30,45],[40,70],[50,95]]'
+kraken-unleashed-ctl set 'cooling.fan=[[20,25],[30,30],[40,55],[50,90]]'
+```
+
+Points are `[coolant temperature °C, duty %]`. In the app you get four editable
+points at 20, 30, 40 and 50 °C, which is enough to shape a sensible curve.
+
+### There is no factory reset
+
+Worth being clear about, because it is a trap. The protocol has **no command to
+restore the cooler's original curve** — NZXT CAM's "default" is a profile CAM
+uploads, not something the cooler keeps in reserve. Once you write a curve, the
+previous one is gone.
+
+So `firmware` means *"write nothing"*, not *"put it back how it was"*. If you
+have already used `curve` or `full`, switching to `firmware` leaves that curve
+running. Use `default` to get back to something quiet.
+
+### Safety
+
+- A **`(59 °C, 100%)` point is always appended** before upload, so no curve you
+  draw can leave the coolant climbing with the pump idling. Above 59 °C the
+  firmware takes over regardless.
+- The **pump has a 20% floor** and the fan a 0% one; these are the firmware's
+  limits and duties are clamped to them.
+- Setting the fan to 0% does stop the fans completely. That is allowed, and it
+  is your call.
+
+---
+
 ## The config file
 
 `/etc/kraken-unleashed.conf` is JSON in sections. Whole lines starting with `//`
@@ -222,6 +271,11 @@ when you change something, so don't keep notes in there.
         "params": { "color": "00FF00", "period": 5.0, "gamma": 2.2 },
         "follow": "/etc/rgb-sync.json",
         "zones": { "ring": true, "fans": true }
+    },
+    "cooling": {
+        "mode": "firmware",     // firmware | default | curve | full
+        "pump": [[20, 50], [30, 60], [40, 80], [50, 100]],
+        "fan":  [[20, 30], [30, 40], [40, 65], [50, 100]]
     },
     "openrgb": {
         "enabled": false,
@@ -338,6 +392,9 @@ start time, or your effect won't stay in phase with anything else.
 | `led.params.*` | `set led.params.color=` | — | effect knobs |
 | `led.zones.*` | `set led.zones.ring=` | `true` | which zones to drive |
 | `led.follow` | `set led.follow=` | `/etc/rgb-sync.json` | shared settings file |
+| `cooling.mode` | `set cooling.mode=` | `firmware` | `firmware`/`default`/`curve`/`full` |
+| `cooling.pump` | `set 'cooling.pump=[[20,40]]'` | see above | pump curve points |
+| `cooling.fan` | `set 'cooling.fan=[[20,25]]'` | see above | fan curve points |
 | `openrgb.enabled` | `set openrgb.enabled=` | `false` | accept E1.31 |
 | `openrgb.universe` | `set openrgb.universe=` | `1` | sACN universe |
 | `openrgb.timeout` | `set openrgb.timeout=` | `2.0` | seconds before falling back |

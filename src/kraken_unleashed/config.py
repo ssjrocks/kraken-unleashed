@@ -53,6 +53,16 @@ DEFAULTS = {
         'follow': None if compat.IS_WINDOWS else '/etc/rgb-sync.json',
         'zones': {'ring': True, 'fans': True},
     },
+    'cooling': {
+        # firmware - leave the cooler's own curve alone (default: we touch nothing)
+        # curve    - upload the pump/fan curves below
+        # full     - both at 100% all the time
+        'mode': 'firmware',
+        # [[liquid_temp_c, duty_percent], ...]. The firmware floor for the pump
+        # is 20%, and a (59C, 100%) failsafe is always appended.
+        'pump': [[20, 50], [30, 60], [40, 80], [50, 100]],
+        'fan': [[20, 30], [30, 40], [40, 65], [50, 100]],
+    },
     'openrgb': {
         'enabled': False,       # turn on to accept E1.31 from OpenRGB
         'universe': 1,

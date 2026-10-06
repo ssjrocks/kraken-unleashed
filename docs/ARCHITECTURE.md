@@ -46,16 +46,37 @@ as a staleness check — if it stops advancing, the service is down.
 
 ## Fan and pump control
 
-**Kraken Unleashed does not set pump or fan speeds.** It only reads them.
+The daemon can set the pump and fan curves, and by default does not.
 
-The cooler runs whatever curve is stored in its own firmware, which is whatever
-the last tool to configure it left behind. That is safe — the pump does not stop
-when the host stops talking to it — but it does mean nothing on the host is
-adapting it any more once you disable the device in CoolerControl.
+It works by **uploading a curve to the cooler**, which then runs it on its own:
+40 duty values, one per degree of coolant temperature from 20 to 59 °C, sent as
+`0x72 | channel | duties`. That is deliberately not host-driven duty control —
+if this daemon dies, is killed, or the machine never gets that far in boot, the
+cooler keeps using the curve it already has instead of whatever the host last
+managed to say.
 
-If you want host-side control back you have two options: re-enable the device in
-CoolerControl and accept that it also wants the LCD (it will fight), or add
-curve-setting to this service. Neither is implemented here.
+Four modes, in `cooling.mode`:
+
+| Mode | What it writes |
+|---|---|
+| `firmware` | nothing at all — the default |
+| `default` | a quiet preset |
+| `curve` | your editable curve |
+| `full` | 100% everywhere |
+
+**There is no factory reset.** The protocol has no command for it: liquidctl's
+`initialize()` only sets a status-polling interval, and NZXT CAM's "default" is
+a profile CAM uploads rather than something the cooler holds in reserve. Once a
+curve is written the previous one is gone, so `firmware` means "write nothing",
+not "restore what it shipped with" — once you have used another mode, that
+earlier curve is not recoverable. `default` exists to get back to something
+quiet, and is fitted to measurements of a cooler on its shipped curve rather
+than invented.
+
+Two safety properties are worth knowing. A `(59 °C, 100%)` point is always
+appended before upload, so no curve can leave the loop climbing with the pump
+idling; and the pump's 20% floor and the 20–59 °C range are the firmware's own
+limits, which the daemon clamps to rather than tries to exceed.
 
 ---
 

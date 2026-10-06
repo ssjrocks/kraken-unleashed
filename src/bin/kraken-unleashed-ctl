@@ -5,6 +5,7 @@
     kraken-unleashed-ctl effects
     kraken-unleashed-ctl styles
     kraken-unleashed-ctl set led.effect=chase led.params.color=FF0000
+    kraken-unleashed-ctl set 'cooling.pump=[[20,40],[50,100]]' 
     kraken-unleashed-ctl preview /tmp/lcd.png
     kraken-unleashed-ctl diagnose      check the device and drivers directly
 """
@@ -20,12 +21,20 @@ from kraken_unleashed.control import Client
 
 def coerce(text):
     """Turn a command-line value into the JSON type it obviously is."""
+    stripped = text.strip()
+    # Lists and objects, so curves can be set from the shell:
+    #   set 'cooling.pump=[[20,40],[50,100]]'
+    if stripped[:1] in ('[', '{'):
+        try:
+            return json.loads(stripped)
+        except ValueError as exc:
+            raise SystemExit(f'{text!r} looks like JSON but will not parse: {exc}')
     for cast in (int, float):
         try:
             return cast(text)
         except ValueError:
             pass
-    low = text.lower()
+    low = stripped.lower()
     if low in ('true', 'false'):
         return low == 'true'
     if low in ('null', 'none'):

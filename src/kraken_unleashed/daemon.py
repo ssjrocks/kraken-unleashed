@@ -19,7 +19,7 @@ from PIL import Image
 
 from . import compat
 from . import config as cfg
-from . import effects, q565, sacn
+from . import cooling, effects, q565, sacn
 from .compositor import Compositor, STYLES, default_background
 from .control import ControlServer
 from .device import (KrakenLCD, DeviceError, MAX_CONSECUTIVE_FAILURES)
@@ -67,6 +67,8 @@ class Daemon:
                       'last_error': None}
         self._rebuild_lcd = True
         self._rebuild_sacn = True
+        self._apply_cooling = True
+        self.cooling_applied = None
 
     # -- subsystem (re)building -------------------------------------------- #
 
@@ -93,6 +95,35 @@ class Daemon:
                 port=orgb['port'], timeout=orgb['timeout'], bind=orgb['bind'])
             self.receiver.start()
         self._rebuild_sacn = False
+
+    def apply_cooling(self):
+        """Upload the pump/fan curves, or leave the firmware's alone.
+
+        Sent once per change, not per loop: the cooler runs the curve itself, so
+        re-sending it every frame would be pointless traffic on the same HID
+        interface the LCD handshake depends on.
+        """
+        self._apply_cooling = False
+        conf = self.config['cooling']
+        mode = conf.get('mode', 'firmware')
+        if mode not in cooling.MODES:
+            self.stats['last_error'] = f'unknown cooling mode {mode!r}'
+            return
+        curves = cooling.curves_for(mode, conf)
+        if curves is None:
+            print('cooling: leaving the firmware curve alone', flush=True)
+            self.cooling_applied = {'mode': mode}
+            return
+        applied = {'mode': mode}
+        for channel in ('pump', 'fan'):
+            try:
+                self.kraken.set_speed_profile(channel, curves[channel])
+                applied[channel] = cooling.describe(channel, curves[channel])
+                print(f'cooling: {applied[channel]}', flush=True)
+            except Exception as exc:
+                self.stats['last_error'] = f'cooling {channel}: {exc}'
+                print(f'cooling: {channel} failed: {exc}', flush=True)
+        self.cooling_applied = applied
 
     # -- LED colours -------------------------------------------------------- #
 
@@ -157,6 +188,8 @@ class Daemon:
                         'effect': self.config['led']['effect']},
                 'openrgb': self.receiver.stats() if self.receiver else
                            {'listening': False, 'live': False},
+                'cooling': dict(self.cooling_applied or {},
+                                configured=self.config['cooling']['mode']),
                 'stats': dict(self.stats, uptime=uptime,
                               fps=self.stats['frames'] / max(uptime, 0.01)),
                 'version': __import__('kraken_unleashed').__version__,
@@ -168,6 +201,13 @@ class Daemon:
             raise ValueError('patch must be an object')
         with self.lock:
             before = json.dumps(self.config, sort_keys=True)
+            if 'cooling' in patch:
+                # Validate against the merged result, not the patch alone, and
+                # before persisting: a bad curve in the config file would be
+                # re-applied on every start and fail silently each time.
+                merged = cfg.deep_update(json.loads(before)['cooling'],
+                                         patch['cooling'])
+                cooling.validate(merged)
             cfg.deep_update(self.config, patch)
             # Only rebuild what actually changed: reloading a GIF takes a
             # moment and would stutter the screen on every slider nudge.
@@ -176,6 +216,8 @@ class Daemon:
                 self._rebuild_lcd = True
             if 'openrgb' in patch:
                 self._rebuild_sacn = True
+            if 'cooling' in patch:
+                self._apply_cooling = True
             changed = json.dumps(self.config, sort_keys=True) != before
             if changed and request.get('persist', True):
                 cfg.save(self.config, self.config_path)
@@ -186,6 +228,7 @@ class Daemon:
             self.config = cfg.load(self.config_path)
             self._rebuild_lcd = True
             self._rebuild_sacn = True
+            self._apply_cooling = True
         return {'config': self.config}
 
     def _h_preview(self, request):
@@ -248,6 +291,8 @@ class Daemon:
                         self.build_compositor()
                     if self._rebuild_sacn:
                         self.build_receiver()
+                    if self._apply_cooling:
+                        self.apply_cooling()
                     lcd_on = self.config['lcd']['enabled']
                     fps = float(self.config['lcd']['fps']) if lcd_on else 30.0
                 interval = 1.0 / max(1.0, fps)

@@ -12,7 +12,7 @@ manages, not a slideshow.
 
 <p align="center">
   <img src="assets/screenshots/app-display.png" width="380" alt="The app's Display page">
-  <img src="assets/screenshots/app-openrgb.png" width="380" alt="The app's OpenRGB page">
+  <img src="assets/screenshots/app-cooling.png" width="380" alt="The app's Cooling page">
 </p>
 
 It also drives the cooler's own ring and fan LEDs, which OpenRGB cannot do on

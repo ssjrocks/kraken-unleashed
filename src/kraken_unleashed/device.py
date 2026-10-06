@@ -16,6 +16,7 @@ interface mid-transfer.
 import struct
 import time
 
+from . import cooling
 from .transport import (BootloaderMode, DeviceError, NotFound,  # noqa: F401
                         VID, PID, BOOTLOADER_PID, open_transport)
 
@@ -92,6 +93,19 @@ class KrakenLCD:
         block = [tuple(rgb)] * self.LEDS_PER_CHANNEL
         self.set_leds(ring=block if ring else None,
                       fans=block if fans else None)
+
+    # -- cooling -------------------------------------------------------------- #
+
+    def set_speed_profile(self, channel, points):
+        """Upload a liquid-temperature curve for 'pump' or 'fan'.
+
+        The firmware runs it from then on, so this is sent once on a change
+        rather than every loop -- and it keeps working if this daemon stops.
+        """
+        if channel not in cooling.CHANNELS:
+            raise ValueError(f'unknown speed channel {channel!r}')
+        self.io.hid_write(cooling.packet(channel, points))
+        return cooling.duties(channel, points)
 
     # -- status ------------------------------------------------------------- #
 
