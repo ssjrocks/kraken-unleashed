@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 — 2026-10-06
 
 ### Added
 - **Pump and fan control**, with a Cooling page in the app. Four modes:
@@ -10,6 +10,12 @@
   keeps working if the service stops.
 - A `(59 °C, 100%)` failsafe point is appended to every curve before upload, and
   duties are clamped to the firmware's own limits (20% pump floor).
+- **Choose which temperature the curve follows** — `cooling.sensor`, one of
+  `liquid`, `cpu` or `gpu`. `liquid` is uploaded to the cooler and runs there;
+  `cpu`/`gpu` are evaluated by the daemon and pushed as a fixed speed, with the
+  coolant failsafe still underneath. The reading is smoothed, since CPU
+  temperature is noisy enough to make a steep curve hunt audibly. Curve
+  breakpoints follow the sensor (20–50 °C for coolant, 40–85 °C for CPU/GPU).
 - `kraken-unleashed-ctl set` now accepts JSON values, so curves can be set from
   the shell: `set 'cooling.pump=[[20,40],[50,100]]'`.
 

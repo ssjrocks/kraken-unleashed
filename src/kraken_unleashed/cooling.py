@@ -34,6 +34,31 @@ CHANNELS = {
 
 MODES = ('firmware', 'default', 'curve', 'full')
 
+#: Which temperature the curve is read against.
+#:
+#: "liquid" is special, and better: the cooler's own curve is indexed by coolant
+#: temperature, so a liquid curve is uploaded once and the firmware runs it --
+#: it keeps working even if this daemon stops. The firmware cannot read host
+#: sensors, so a cpu or gpu curve has to be evaluated here and pushed as a flat
+#: duty whenever it changes. The (59 C, 100%) coolant failsafe still applies
+#: underneath, so a stalled daemon cannot cook the loop, but it will hold
+#: whatever duty it last sent until the coolant gets that hot.
+SENSORS = ('liquid', 'cpu', 'gpu')
+
+#: Sensible curve breakpoints per sensor. Coolant moves in a narrow band; CPU
+#: and GPU temperatures do not, so the same 20-50 C points would be useless.
+SENSOR_POINTS = {
+    'liquid': (20, 30, 40, 50),
+    'cpu': (40, 55, 70, 85),
+    'gpu': (40, 55, 70, 85),
+}
+
+SENSOR_LABELS = {
+    'liquid': 'Coolant temperature',
+    'cpu': 'CPU temperature',
+    'gpu': 'GPU temperature',
+}
+
 #: The "quiet default" preset.
 #:
 #: There is no factory-reset command in this protocol -- liquidctl's initialize()
@@ -99,20 +124,28 @@ def validate(config):
     mode = config.get('mode', 'firmware')
     if mode not in MODES:
         raise ValueError(f'cooling mode must be one of {", ".join(MODES)}, got {mode!r}')
+    sensor = config.get('sensor', 'liquid')
+    if sensor not in SENSORS:
+        raise ValueError(
+            f'cooling sensor must be one of {", ".join(SENSORS)}, got {sensor!r}')
     for channel in ('pump', 'fan'):
         if config.get(channel) is not None:
             validate_points(config[channel], f'cooling.{channel}')
 
 
-def normalize(points):
-    """Sort, make monotonic, and enforce a (critical, 100%) failsafe.
+def normalize(points, failsafe=True):
+    """Sort, make monotonic, and (by default) enforce a (critical, 100%) point.
 
     Mirrors liquidctl's normalize_profile. The failsafe is the important part:
     whatever someone draws, the curve ends at 100% by the critical temperature,
     so a careless curve cannot leave the cooler idling while the loop boils.
+
+    It is a *coolant* failsafe, though, so it must not be applied when reading a
+    curve against a host sensor -- 59 C is a hot loop but an ordinary CPU, and
+    injecting the point there would pin any CPU curve to 100% above 59 C.
     """
-    pts = sorted(validate_points(points) + [(CRITICAL_TEMPERATURE, 100)],
-                 key=lambda p: (p[0], -p[1]))
+    extra = [(CRITICAL_TEMPERATURE, 100)] if failsafe else []
+    pts = sorted(validate_points(points) + extra, key=lambda p: (p[0], -p[1]))
     mono = pts[:1]
     for (x, y), (xb, yb) in zip(pts[1:], pts[:-1]):
         if x == xb:
@@ -173,6 +206,42 @@ def curves_for(mode, config):
         return {'pump': [[MIN_TEMPERATURE, 100]], 'fan': [[MIN_TEMPERATURE, 100]]}
     return {'pump': config.get('pump') or DEFAULT_CURVES['pump'],
             'fan': config.get('fan') or DEFAULT_CURVES['fan']}
+
+
+def flat(duty):
+    """A curve that is *duty* everywhere.
+
+    How a fixed speed is set: there is no "set duty" command, only "set curve",
+    so a flat curve is the fixed-speed primitive. normalize() still appends the
+    coolant failsafe, which is what keeps host-driven control from being
+    dangerous when the host stops driving.
+    """
+    return [[MIN_TEMPERATURE, int(duty)], [CRITICAL_TEMPERATURE - 1, int(duty)]]
+
+
+def retarget(points, sensor):
+    """Move a curve's points onto *sensor*'s breakpoints, keeping the duties.
+
+    Switching sensor should keep the shape someone drew rather than silently
+    reading 20-50 C points as CPU temperatures, where they would mean "always
+    100%".
+    """
+    temps = SENSOR_POINTS[sensor]
+    duties_only = [int(d) for _, d in validate_points(points)]
+    # Pad or trim to the number of breakpoints this sensor uses.
+    while len(duties_only) < len(temps):
+        duties_only.append(duties_only[-1] if duties_only else 50)
+    return [[t, d] for t, d in zip(temps, duties_only[:len(temps)])]
+
+
+def duty_at(points, temperature):
+    """Duty the curve asks for at *temperature*, for host-driven sensors.
+
+    No coolant failsafe here: this curve is read against a CPU or GPU, where
+    59 C means nothing in particular. The failsafe still exists on the device,
+    in the flat curve that gets uploaded.
+    """
+    return clamp(interpolate(normalize(points, failsafe=False), temperature), 0, 100)
 
 
 def describe(channel, points):

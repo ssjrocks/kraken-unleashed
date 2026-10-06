@@ -73,6 +73,14 @@ earlier curve is not recoverable. `default` exists to get back to something
 quiet, and is fitted to measurements of a cooler on its shipped curve rather
 than invented.
 
+`cooling.sensor` picks what the curve is read against. `liquid` is uploaded and
+runs on the device. `cpu` and `gpu` cannot be — the firmware has no access to
+host sensors — so the daemon evaluates the curve itself and uploads a *flat*
+curve as the fixed-speed primitive (there is no "set duty" command, only "set
+curve"). The reading is smoothed with an EMA and changes under 3 points are
+skipped, which keeps a noisy CPU sensor from writing to the shared HID interface
+every couple of seconds.
+
 Two safety properties are worth knowing. A `(59 °C, 100%)` point is always
 appended before upload, so no curve can leave the loop climbing with the pump
 idling; and the pump's 20% floor and the 20–59 °C range are the firmware's own

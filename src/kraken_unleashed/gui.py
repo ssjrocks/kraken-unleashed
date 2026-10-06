@@ -38,9 +38,21 @@ COOLING_MODES = [
     ('full', 'Maximum'),
     ('firmware', "Don't manage cooling"),
 ]
-#: Temperatures the editable curve has a point for. Four is enough to shape a
-#: sensible curve without turning this page into a graph editor.
-CURVE_TEMPS = (20, 30, 40, 50)
+#: Four points is enough to shape a sensible curve without turning this page
+#: into a graph editor. The temperatures themselves depend on the sensor, so the
+#: rows are held by index and their titles are set when the sensor changes.
+CURVE_POINTS = 4
+
+COOLING_SENSORS = [
+    ('liquid', 'Coolant temperature'),
+    ('cpu', 'CPU temperature'),
+    ('gpu', 'GPU temperature'),
+]
+SENSOR_TEMPS = {
+    'liquid': (20, 30, 40, 50),
+    'cpu': (40, 55, 70, 85),
+    'gpu': (40, 55, 70, 85),
+}
 
 EFFECT_LABELS = {
     'breathing': 'Breathing', 'static': 'Static', 'pulse': 'Pulse',
@@ -377,27 +389,41 @@ class Window(Adw.ApplicationWindow):
                       valign=Gtk.Align.START, margin_top=14))
         group.add(self.cooling_note)
 
+        self.cooling_sensor = Adw.ComboRow(
+            title='Follow',
+            subtitle='Which temperature the curve is read against',
+            model=Gtk.StringList.new([label for _, label in COOLING_SENSORS]))
+        self.cooling_sensor.connect('notify::selected', self._on_sensor_changed)
+        group.add(self.cooling_sensor)
+
+        self.sensor_note = Adw.ActionRow(title='', subtitle='')
+        self.sensor_note.set_subtitle_lines(4)
+        self.sensor_note.add_prefix(
+            Gtk.Image(icon_name='dialog-information-symbolic',
+                      valign=Gtk.Align.START, margin_top=14))
+        group.add(self.sensor_note)
+
         self.cooling_live = Adw.ActionRow(title='Right now', subtitle='—')
         group.add(self.cooling_live)
         page.add(group)
 
         self.curve_rows = {}
-        for channel, title, note in (
-                ('pump', 'Pump curve',
-                 'Duty at each liquid temperature. The cooler enforces a 20% '
-                 'floor on the pump, whatever you set here.'),
-                ('fan', 'Radiator fan curve',
-                 'Duty at each liquid temperature. 0% stops the fans entirely.')):
-            group = Adw.PreferencesGroup(title=title, description=note)
-            self.curve_rows[channel] = {}
-            for temp in CURVE_TEMPS:
+        self.curve_groups = {}
+        self.curve_notes = {
+            'pump': 'The cooler enforces a 20% floor on the pump, whatever you set here.',
+            'fan': '0% stops the fans entirely.',
+        }
+        for channel, title in (('pump', 'Pump curve'),
+                               ('fan', 'Radiator fan curve')):
+            group = Adw.PreferencesGroup(title=title)
+            self.curve_rows[channel] = []
+            for _ in range(CURVE_POINTS):
                 row = Adw.SpinRow.new_with_range(0, 100, 5)
-                row.set_title(f'At {temp} °C')
                 row.set_digits(0)
                 row.connect('notify::value', self._on_change)
-                self.curve_rows[channel][temp] = row
+                self.curve_rows[channel].append(row)
                 group.add(row)
-            self.curve_rows[channel]['group'] = group
+            self.curve_groups[channel] = group
             page.add(group)
 
         group = Adw.PreferencesGroup(title='Safety')
@@ -417,14 +443,52 @@ class Window(Adw.ApplicationWindow):
         page.add(group)
         return page
 
+    def _current_sensor(self):
+        return COOLING_SENSORS[self.cooling_sensor.get_selected()][0]
+
     def _curve_from_rows(self, channel):
-        return [[temp, int(self.curve_rows[channel][temp].get_value())]
-                for temp in CURVE_TEMPS]
+        temps = SENSOR_TEMPS[self._current_sensor()]
+        return [[temp, int(row.get_value())]
+                for temp, row in zip(temps, self.curve_rows[channel])]
+
+    def _retitle_curve_rows(self):
+        for temp, row in zip(SENSOR_TEMPS[self._current_sensor()],
+                             self.curve_rows['pump']):
+            row.set_title(f'At {temp} °C')
+        for temp, row in zip(SENSOR_TEMPS[self._current_sensor()],
+                             self.curve_rows['fan']):
+            row.set_title(f'At {temp} °C')
+
+    def _on_sensor_changed(self, *_args):
+        # Keep the duties the user shaped; only the temperatures they sit at
+        # change. Reading 20-50 C points as CPU temperatures would silently mean
+        # "always 100%".
+        self._retitle_curve_rows()
+        self._on_change()
 
     def _update_cooling_visibility(self):
         mode = COOLING_MODES[self.cooling_mode.get_selected()][0]
+        sensor = self._current_sensor()
+        label = dict(COOLING_SENSORS)[sensor].lower()
         for channel in ('pump', 'fan'):
-            self.curve_rows[channel]['group'].set_visible(mode == 'curve')
+            self.curve_groups[channel].set_visible(mode == 'curve')
+            # The description has to follow the sensor, or a CPU curve still
+            # claims to be indexed by coolant temperature.
+            self.curve_groups[channel].set_description(
+                f'Duty at each {label}. {self.curve_notes[channel]}')
+        if sensor == 'liquid':
+            self.sensor_note.set_title('Uploaded to the cooler')
+            self.sensor_note.set_subtitle(
+                'The cooler runs a coolant curve itself, so it keeps working '
+                'even if this service stops. This is the robust choice.')
+        else:
+            self.sensor_note.set_title(f'Driven from here, not by the cooler')
+            self.sensor_note.set_subtitle(
+                'The cooler can only read its own coolant temperature, so this '
+                'service reads the sensor and sends a fixed speed when it '
+                'changes. If the service stops, the cooler holds the last speed '
+                'it was given — the 100% at 59 °C coolant failsafe still '
+                'applies underneath.')
         notes = {
             'default': ('A quiet curve, uploaded to the cooler',
                         'Modelled on what a Kraken 2024 Elite does on its '
@@ -512,18 +576,21 @@ class Window(Adw.ApplicationWindow):
             modes = [key for key, _ in COOLING_MODES]
             self.cooling_mode.set_selected(modes.index(cool.get('mode', 'firmware'))
                                            if cool.get('mode') in modes else 3)
+            sensors = [key for key, _ in COOLING_SENSORS]
+            sensor = cool.get('sensor', 'liquid')
+            self.cooling_sensor.set_selected(
+                sensors.index(sensor) if sensor in sensors else 0)
+            self._retitle_curve_rows()
+            temps = SENSOR_TEMPS[sensor if sensor in sensors else 'liquid']
             for channel in ('pump', 'fan'):
-                points = dict((int(t), int(d)) for t, d in
-                              (cool.get(channel) or CURVE_DEFAULTS[channel]))
-                for temp, row in self.curve_rows[channel].items():
-                    if temp == 'group':
-                        continue
-                    if temp in points:
-                        row.set_value(points[temp])
-                    else:
-                        # The config may carry points at other temperatures; show
-                        # the interpolated value rather than a stale one.
-                        row.set_value(_interp(sorted(points.items()), temp))
+                points = sorted((int(t), int(d)) for t, d in
+                                (cool.get(channel) or CURVE_DEFAULTS[channel]))
+                for temp, row in zip(temps, self.curve_rows[channel]):
+                    exact = dict(points).get(temp)
+                    # A config curve may sit on other temperatures (after a
+                    # sensor change); show the interpolated value, not a stale one.
+                    row.set_value(exact if exact is not None
+                                  else _interp(points, temp))
 
             self.orgb_enabled.set_active(bool(orgb['enabled']))
             self.universe_row.set_value(float(orgb['universe']))
@@ -589,6 +656,7 @@ class Window(Adw.ApplicationWindow):
             },
             'cooling': {
                 'mode': COOLING_MODES[self.cooling_mode.get_selected()][0],
+                'sensor': self._current_sensor(),
                 'pump': self._curve_from_rows('pump'),
                 'fan': self._curve_from_rows('fan'),
             },
@@ -702,7 +770,11 @@ class Window(Adw.ApplicationWindow):
 
         cool = status.get('cooling') or {}
         liquid = dev.get('liquid')
-        bits = [f"mode: {cool.get('configured', '?')}"]
+        bits = [f"mode: {cool.get('configured', '?')}",
+                f"follows: {cool.get('sensor', 'liquid')}"]
+        duties = cool.get('duties') or {}
+        if duties:
+            bits.append('driving ' + ', '.join(f'{k} {v}%' for k, v in sorted(duties.items())))
         if isinstance(liquid, (int, float)):
             bits.append(f'coolant {liquid:.1f} °C')
         bits.append(f"pump {fmt(dev.get('pump_rpm'))} rpm")

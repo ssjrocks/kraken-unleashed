@@ -58,6 +58,10 @@ DEFAULTS = {
         # curve    - upload the pump/fan curves below
         # full     - both at 100% all the time
         'mode': 'firmware',
+        # Which temperature the curve is read against: liquid, cpu or gpu.
+        # "liquid" is uploaded to the cooler and runs there, so it survives this
+        # daemon stopping; cpu and gpu have to be driven from here.
+        'sensor': 'liquid',
         # [[liquid_temp_c, duty_percent], ...]. The firmware floor for the pump
         # is 20%, and a (59C, 100%) failsafe is always appended.
         'pump': [[20, 50], [30, 60], [40, 80], [50, 100]],

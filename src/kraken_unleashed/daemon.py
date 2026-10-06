@@ -69,6 +69,9 @@ class Daemon:
         self._rebuild_sacn = True
         self._apply_cooling = True
         self.cooling_applied = None
+        self._cooling_duties = {}      # last duty actually written, per channel
+        self._cooling_tick = 0.0
+        self._cooling_smoothed = None  # EMA of the host sensor
 
     # -- subsystem (re)building -------------------------------------------- #
 
@@ -109,12 +112,27 @@ class Daemon:
         if mode not in cooling.MODES:
             self.stats['last_error'] = f'unknown cooling mode {mode!r}'
             return
+        sensor = conf.get('sensor', 'liquid')
         curves = cooling.curves_for(mode, conf)
         if curves is None:
             print('cooling: leaving the firmware curve alone', flush=True)
-            self.cooling_applied = {'mode': mode}
+            self.cooling_applied = {'mode': mode, 'sensor': sensor}
             return
-        applied = {'mode': mode}
+
+        # A host-driven sensor is not uploaded as a curve -- the firmware only
+        # understands coolant temperature. The loop pushes a flat duty instead.
+        if sensor != 'liquid' and mode != 'full':
+            self._cooling_duties = {}
+            self._cooling_tick = 0.0
+            self._cooling_smoothed = None
+            self.cooling_applied = {'mode': mode, 'sensor': sensor,
+                                    'driven_by': 'host'}
+            print(f'cooling: following {sensor} temperature from the host',
+                  flush=True)
+            self.tick_cooling(force=True)
+            return
+
+        applied = {'mode': mode, 'sensor': 'liquid'}
         for channel in ('pump', 'fan'):
             try:
                 self.kraken.set_speed_profile(channel, curves[channel])
@@ -124,6 +142,69 @@ class Daemon:
                 self.stats['last_error'] = f'cooling {channel}: {exc}'
                 print(f'cooling: {channel} failed: {exc}', flush=True)
         self.cooling_applied = applied
+
+    def sensor_value(self, sensor):
+        cpu_t, _, gpu_t, _ = self.sensors.snapshot()
+        return {'liquid': self.dev.get('liquid'), 'cpu': cpu_t, 'gpu': gpu_t}.get(sensor)
+
+    def tick_cooling(self, force=False):
+        """Host-driven cooling: read the sensor, push a flat duty if it moved.
+
+        Only writes when the duty actually changes by a couple of points. The
+        HID interface is shared with the LCD handshake, so a write every second
+        for a degree of noise would be real contention for no benefit.
+        """
+        conf = self.config['cooling']
+        mode, sensor = conf.get('mode', 'firmware'), conf.get('sensor', 'liquid')
+        if sensor == 'liquid' or mode in ('firmware', 'full'):
+            return
+        now = time.monotonic()
+        if not force and now - self._cooling_tick < 2.0:
+            return
+        self._cooling_tick = now
+
+        raw = self.sensor_value(sensor)
+        if raw is not None:
+            # CPU and GPU temperatures are noisy at the degree level, and a
+            # steep curve turns that into audible fan hunting plus a device
+            # write every couple of seconds on the same interface the LCD
+            # handshake uses. Smooth before reading the curve.
+            self._cooling_smoothed = (
+                raw if self._cooling_smoothed is None
+                else self._cooling_smoothed + 0.25 * (raw - self._cooling_smoothed))
+        value = self._cooling_smoothed if raw is not None else None
+        if value is None:
+            if self._cooling_duties.get('_fallback') != sensor:
+                print(f'cooling: {sensor} temperature unavailable, falling back '
+                      'to the quiet coolant preset', flush=True)
+                for channel in ('pump', 'fan'):
+                    try:
+                        self.kraken.set_speed_profile(
+                            channel, cooling.QUIET_CURVES[channel])
+                    except Exception as exc:
+                        self.stats['last_error'] = f'cooling {channel}: {exc}'
+                self._cooling_duties = {'_fallback': sensor}
+            return
+        self._cooling_duties.pop('_fallback', None)
+
+        base = (cooling.QUIET_CURVES if mode == 'default' else conf)
+        for channel in ('pump', 'fan'):
+            points = base.get(channel) or cooling.DEFAULT_CURVES[channel]
+            if mode == 'default':
+                points = cooling.retarget(points, sensor)
+            duty = cooling.duty_at(points, value)
+            _, dmin, dmax = cooling.CHANNELS[channel]
+            duty = cooling.clamp(duty, dmin, dmax)
+            previous = self._cooling_duties.get(channel)
+            # 3 points of hysteresis on top of the smoothing: together these
+            # stop a degree of sensor noise becoming a speed change.
+            if previous is not None and abs(duty - previous) < 3:
+                continue
+            try:
+                self.kraken.set_speed_profile(channel, cooling.flat(duty))
+                self._cooling_duties[channel] = duty
+            except Exception as exc:
+                self.stats['last_error'] = f'cooling {channel}: {exc}'
 
     # -- LED colours -------------------------------------------------------- #
 
@@ -189,7 +270,12 @@ class Daemon:
                 'openrgb': self.receiver.stats() if self.receiver else
                            {'listening': False, 'live': False},
                 'cooling': dict(self.cooling_applied or {},
-                                configured=self.config['cooling']['mode']),
+                                configured=self.config['cooling']['mode'],
+                                sensor=self.config['cooling'].get('sensor', 'liquid'),
+                                duties={k: v for k, v in self._cooling_duties.items()
+                                        if not k.startswith('_')},
+                                smoothed=(round(self._cooling_smoothed, 1)
+                                          if self._cooling_smoothed is not None else None)),
                 'stats': dict(self.stats, uptime=uptime,
                               fps=self.stats['frames'] / max(uptime, 0.01)),
                 'version': __import__('kraken_unleashed').__version__,
@@ -293,6 +379,10 @@ class Daemon:
                         self.build_receiver()
                     if self._apply_cooling:
                         self.apply_cooling()
+                    # Under the lock: it reads the config and writes to the
+                    # device, and set_config may be mutating that config from a
+                    # control-socket thread. The write is about a millisecond.
+                    self.tick_cooling()
                     lcd_on = self.config['lcd']['enabled']
                     fps = float(self.config['lcd']['fps']) if lcd_on else 30.0
                 interval = 1.0 / max(1.0, fps)

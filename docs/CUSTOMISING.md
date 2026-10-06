@@ -213,8 +213,39 @@ kraken-unleashed-ctl set cooling.mode=default
 | `curve` | Your own curve, from the points below. |
 | `full` | Pump and fans at 100% constantly. |
 
-The curve is **uploaded to the cooler**, which then runs it itself. That matters:
-if this service stops, is killed, or never starts, your curve keeps working.
+### Which temperature the curve follows
+
+```bash
+kraken-unleashed-ctl set cooling.sensor=cpu      # liquid | cpu | gpu
+```
+
+**`liquid` is the better choice, and the default.** The cooler's own curve is
+indexed by coolant temperature, so a liquid curve is *uploaded once* and the
+firmware runs it — it keeps working if this service stops, is killed, or never
+starts.
+
+The firmware cannot read host sensors. So a `cpu` or `gpu` curve has to be
+evaluated here and pushed to the cooler as a fixed speed whenever it changes:
+
+- If the service stops, the cooler **holds the last speed it was sent**. The
+  `(59 °C coolant, 100%)` failsafe still applies underneath, so the loop cannot
+  run away — but it will sit at that speed until the coolant gets that hot.
+- The reading is smoothed and changes under 3 points are ignored, because CPU
+  temperature is noisy at the degree level and a steep curve otherwise turns
+  that into audible fan hunting.
+- If the sensor is unavailable, it falls back to the quiet coolant preset and
+  says so in the log.
+
+The curve breakpoints follow the sensor, because the same temperatures would be
+meaningless across them:
+
+| Sensor | Points |
+|---|---|
+| `liquid` | 20, 30, 40, 50 °C |
+| `cpu` / `gpu` | 40, 55, 70, 85 °C |
+
+Switching sensor keeps the duties you shaped and moves them onto the new
+breakpoints.
 
 ```bash
 kraken-unleashed-ctl set 'cooling.pump=[[20,40],[30,45],[40,70],[50,95]]'
