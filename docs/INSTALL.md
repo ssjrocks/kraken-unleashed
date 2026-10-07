@@ -102,6 +102,33 @@ not involve OpenRGB touching the device. See [RGB.md](RGB.md).
 
 **liquidctl** — don't run it against this device while the service is up.
 
+### A tested arrangement: let your existing tools keep their jobs
+
+If you already run CoolerControl and OpenRGB, you do not have to give either of
+them up. This is verified on a Kraken 2024 Elite, not theory:
+
+| Job | Owner |
+|---|---|
+| Pump and fan curves | **CoolerControl** (needs `liquidctl` installed) |
+| RGB on everything OpenRGB can see | **OpenRGB** / rgb-sync |
+| The cooler's LCD | **Kraken Unleashed** |
+| The cooler's own ring and fan LEDs | Kraken Unleashed, or OpenRGB via the [E1.31 relay](RGB.md) |
+
+Two settings make it work:
+
+```bash
+sudo apt install liquidctl                       # so CoolerControl can see the cooler
+kraken-unleashed-ctl set cooling.mode=firmware   # we stay out of cooling
+```
+
+and in CoolerControl, leave the Kraken's **LCD** setting off. Its fan and pump
+settings are fine.
+
+Measured running like this: CoolerControl actively modulating the pump between
+2471 and 2626 rpm, `liquidctl status` reading correctly, and the LCD at 12.0 fps
+with zero refused frames across 37,689 frames. Both processes hold the cooler's
+HID node at once; only this service claims the bulk interface the frames use.
+
 Full details in
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#the-screen-is-black-flickering-or-showing-the-wrong-thing).
 
