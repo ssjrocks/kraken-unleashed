@@ -32,7 +32,10 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from ok.backend.lcd_render import render, LcdData, _BG, _RENDERERS  # noqa: E402
 
-W = H = 640
+#: The renderer draws on a fixed 640x640 canvas; smaller panels are scaled at
+#: the end rather than re-laying-out every screen for each size.
+CANVAS = 640
+W = H = CANVAS
 STYLES = tuple(_RENDERERS)
 
 
@@ -64,7 +67,8 @@ def load_background(path):
 
 
 class Compositor:
-    def __init__(self, lcd_config, gif_path=None, cpu_vendor=None, gpu_vendor=None):
+    def __init__(self, lcd_config, gif_path=None, cpu_vendor=None, gpu_vendor=None,
+                 resolution=None):
         self.style = lcd_config['style']
         self.ring = tuple(int(lcd_config['ring'][i:i + 2], 16) for i in (0, 2, 4))
         self.rotate = int(lcd_config['rotate'])
@@ -78,6 +82,9 @@ class Compositor:
         self.bg = Image.new('RGB', (W, H), _BG)
         self.cpu_vendor = cpu_vendor
         self.gpu_vendor = gpu_vendor
+        #: Panel size. None means the renderer's own canvas, which is what the
+        #: 640x640 models want; smaller panels get one resize at the end.
+        self.resolution = tuple(resolution) if resolution else (CANVAS, CANVAS)
         self._key = None
         self._overlay = None
 
@@ -117,4 +124,8 @@ class Compositor:
     def compose(self, elapsed, data, rotate=True):
         """The finished frame, rotated for the cooler's mounting by default."""
         image = ImageChops.lighter(self.frame_at(elapsed), self.overlay_for(data))
-        return image.rotate(-self.rotate) if rotate else image
+        if rotate:
+            image = image.rotate(-self.rotate)
+        if self.resolution != (CANVAS, CANVAS):
+            image = image.resize(self.resolution)
+        return image

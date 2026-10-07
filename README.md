@@ -61,7 +61,8 @@ The result runs at **12 fps for about 7% of one CPU core**.
 ## What you need
 
 - An **NZXT Kraken 2024 Elite** or **Elite V2** (USB ID `1e71:3012`),
-  with its internal USB 2.0 header cable connected
+  with its internal USB 2.0 header cable connected. Other Krakens are
+  recognised but **unverified** — see [supported coolers](#supported-coolers)
 - Linux with systemd
 - Python 3.9+ with `numpy`, `Pillow` and `pyusb` (the installer handles these on
   apt, dnf, pacman and zypper)
@@ -98,6 +99,25 @@ Settings live in `/etc/kraken-unleashed.conf` if you would rather edit a file
 The full guide — picking a good GIF, the three layouts, the LED effects, changing
 colours and fonts, adding your own sensor screen or effect — is in
 [docs/CUSTOMISING.md](docs/CUSTOMISING.md).
+
+## Supported coolers
+
+The protocol work was done on one cooler. The rest are recognised from
+liquidctl's device table and will start, but nobody has confirmed they work —
+`kraken-unleashed-ctl diagnose` tells you which category yours is in.
+
+| USB ID | Cooler | LCD | Status |
+|---|---|---|---|
+| `1e71:3012` | Kraken 2024 Elite RGB | 640×640 | **verified on hardware** |
+| `1e71:300c` | Kraken 2023 Elite | 640×640 | untested |
+| `1e71:300e` | Kraken 2023 | 240×240 | untested |
+| `1e71:3014` | Kraken 2024 Plus | 240×240 | untested |
+| `1e71:3008` | Kraken Z53/Z63/Z73 | 320×320 | untested, and may not support the streaming path at all |
+
+Trying an untested one is safe: the LCD waits for the cooler's acknowledgement
+before sending each frame, so a model that does not speak this protocol refuses
+and the service stops rather than pushing at it. If yours works — or doesn't —
+[say so](https://github.com/ssjrocks/kraken-unleashed/issues).
 
 ## Documentation
 

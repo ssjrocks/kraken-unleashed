@@ -173,17 +173,32 @@ def interpolate(points, temp):
     return points[-1][1]
 
 
-def duties(channel, points):
+def channel_limits(channel, channels=None):
+    """(channel id, min duty, max duty), or a useful error for a bad name.
+
+    *channels* lets a caller pass the attached model's layout; the older Kraken
+    Z3 uses different channel ids from the 2023/2024 family.
+    """
+    table = channels or CHANNELS
+    try:
+        return table[channel]
+    except KeyError:
+        raise ValueError(
+            f'unknown speed channel {channel!r}; expected one of '
+            f'{", ".join(table)}') from None
+
+
+def duties(channel, points, channels=None):
     """The 40 duty bytes for *channel* from a list of (temp, duty) points."""
-    _, dmin, dmax = CHANNELS[channel]
+    _, dmin, dmax = channel_limits(channel, channels)
     norm = normalize(points)
     return [clamp(interpolate(norm, t), dmin, dmax) for t in TEMPERATURES]
 
 
-def packet(channel, points):
+def packet(channel, points, channels=None):
     """The full HID report: report id, command, channel, duties, padding."""
-    cid, _, _ = CHANNELS[channel]
-    body = [SET_COOLING] + list(cid) + duties(channel, points)
+    cid, _, _ = channel_limits(channel, channels)
+    body = [SET_COOLING] + list(cid) + duties(channel, points, channels)
     # 64-byte payload after the leading report id, matching every other command
     # this daemon sends.
     return bytes([0x00] + body + [0x00] * (64 - len(body)))

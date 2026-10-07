@@ -1,0 +1,80 @@
+name: Tests
+
+# The logic that can be tested without a cooler attached: the frame encoder,
+# the effect engine, the E1.31 receiver, the cooling curves, config migration
+# and the control socket. Every one of those areas has had a real bug in it, so
+# this is not ceremony.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # pyusb needs libusb present to import cleanly; no device is opened.
+          sudo apt-get update -qq && sudo apt-get install -y -qq libusb-1.0-0
+          python -m pip install numpy pillow pyusb pytest
+
+      - name: Run the test suite
+        run: python -m pytest tests/ -q
+
+      - name: Render a frame without a device
+        # Proves the vendored renderer and the bundled background still work
+        # together, which no unit test covers.
+        run: |
+          python src/bin/kraken-unleashed-daemon --preview /tmp/preview.png \
+            || python -c "
+          import sys; sys.path.insert(0, 'src')
+          from kraken_unleashed.daemon import main
+          sys.exit(main(['--preview', '/tmp/preview.png']))"
+          test -s /tmp/preview.png
+          python -c "
+          from PIL import Image
+          im = Image.open('/tmp/preview.png')
+          assert im.size == (640, 640), im.size
+          print('rendered', im.size, im.mode)"
+
+      - name: Check the CLI entry points import
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, 'src')
+          from kraken_unleashed.daemon import main
+          sys.exit(main(['--list-effects']))"
+          python -c "
+          import sys; sys.path.insert(0, 'src')
+          from kraken_unleashed.daemon import main
+          sys.exit(main(['--list-styles']))"
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the installer scripts parse
+        run: |
+          for f in install.sh uninstall.sh extras/rgb-sync/install.sh; do
+            bash -n "$f" && echo "ok  $f"
+          done
+      - name: Check the desktop entry is valid
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq desktop-file-utils
+          desktop-file-validate packaging/io.github.ssjrocks.KrakenUnleashed.desktop

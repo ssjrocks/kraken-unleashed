@@ -33,6 +33,8 @@ class KrakenLCD:
 
     def __init__(self, hidraw=None):
         self.io = open_transport(hidraw)
+        #: Which cooler was actually found; drives LCD size and speed channels.
+        self.model = self.io.model
 
     # -- plumbing ----------------------------------------------------------- #
 
@@ -102,10 +104,10 @@ class KrakenLCD:
         The firmware runs it from then on, so this is sent once on a change
         rather than every loop -- and it keeps working if this daemon stops.
         """
-        if channel not in cooling.CHANNELS:
-            raise ValueError(f'unknown speed channel {channel!r}')
-        self.io.hid_write(cooling.packet(channel, points))
-        return cooling.duties(channel, points)
+        # cooling.packet validates the channel name and the curve for us.
+        channels = self.model.speed
+        self.io.hid_write(cooling.packet(channel, points, channels))
+        return cooling.duties(channel, points, channels)
 
     # -- status ------------------------------------------------------------- #
 

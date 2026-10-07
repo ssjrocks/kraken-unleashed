@@ -23,6 +23,7 @@ import time
 import usb.core
 import usb.util
 
+from . import models
 from .compat import IS_WINDOWS
 
 
@@ -42,7 +43,9 @@ def _backend():
     except Exception:
         return None                     # fall back to pyusb's discovery
 
-VID, PID, BOOTLOADER_PID = 0x1E71, 0x3012, 0x3011
+VID, BOOTLOADER_PID = models.VID, models.BOOTLOADER_PID
+#: Kept for callers that still want "the usual one"; detection tries them all.
+PID = models.DEFAULT.pid
 HID_INTERFACE = 1
 BULK_INTERFACE = 0
 BULK_ENDPOINT = 0x02
@@ -65,7 +68,7 @@ class NotFound(DeviceError):
 
 
 def find_usb():
-    """The pyusb device handle, or raise with an explanation."""
+    """(pyusb handle, Model) for whichever known cooler is attached."""
     kwargs = {}
     backend = _backend()
     if backend is not None:
@@ -76,25 +79,26 @@ def find_usb():
                 'Kraken is in BOOTLOADER mode (1e71:3011). It needs a full power cut '
                 '(shut down, switch the PSU off ~30s); refusing to touch it. '
                 'See docs/TROUBLESHOOTING.md.')
-        dev = usb.core.find(idVendor=VID, idProduct=PID, **kwargs)
+        for pid in sorted(models.MODELS):
+            dev = usb.core.find(idVendor=VID, idProduct=pid, **kwargs)
+            if dev is not None:
+                return dev, models.MODELS[pid]
     except usb.core.NoBackendError as exc:
         raise NoBackend(
             'no USB backend (libusb) is available, so the cooler cannot be '
             'reached. On Windows this means the bundled libusb-1.0.dll is '
             'missing from the install folder; on Linux, install libusb-1.0.'
         ) from exc
-    if dev is None:
-        raise NotFound(
-            f'Kraken {VID:04x}:{PID:04x} not found. Is it plugged into an '
-            'internal USB 2.0 header?')
-    return dev
+    raise NotFound(
+        'No supported NZXT cooler found. Is it plugged into an internal USB 2.0 '
+        'header? Known devices:\n' + '\n'.join(models.describe_support()))
 
 
 class _BulkMixin:
     """Claims interface 0 and writes frame payloads to endpoint 0x02."""
 
     def _open_bulk(self):
-        self.usb = find_usb()
+        self.usb, self.model = find_usb()
         usb.util.claim_interface(self.usb, BULK_INTERFACE)
         self._claimed = True
 
@@ -117,18 +121,21 @@ class LinuxTransport(_BulkMixin):
         import select
         self._select = select
         self._open_bulk()
-        self.fd = os.open(hidraw or self._find_hidraw(), os.O_RDWR)
+        self.fd = os.open(hidraw or self._find_hidraw(self.model.pid), os.O_RDWR)
 
     @staticmethod
-    def _find_hidraw():
+    def _find_hidraw(pid=None):
+        wanted = [pid] if pid else sorted(models.MODELS)
         for node in sorted(os.listdir('/sys/class/hidraw')):
             try:
-                uevent = open(f'/sys/class/hidraw/{node}/device/uevent').read()
+                uevent = open(f'/sys/class/hidraw/{node}/device/uevent').read().upper()
             except OSError:
                 continue
-            if f'{VID:04X}' in uevent.upper() and f'{PID:04X}' in uevent.upper():
+            if f'{VID:04X}' not in uevent:
+                continue
+            if any(f'{p:04X}' in uevent for p in wanted):
                 return f'/dev/{node}'
-        raise NotFound('no hidraw node for the Kraken (is this running as root?)')
+        raise NotFound('no hidraw node for the cooler (is this running as root?)')
 
     def hid_write(self, data):
         os.write(self.fd, data)
@@ -179,7 +186,7 @@ class WindowsTransport(_BulkMixin):
         # Pick interface 1 explicitly: the device publishes two, and opening by
         # VID/PID alone can land on the wrong one.
         path = None
-        for info in hid.enumerate(VID, PID):
+        for info in hid.enumerate(VID, self.model.pid):
             if info.get('interface_number') in (HID_INTERFACE, -1):
                 path = info['path']
                 if info.get('interface_number') == HID_INTERFACE:
@@ -238,8 +245,13 @@ def diagnose():
     ok = True
 
     try:
-        usb_dev = find_usb()
-        lines.append(f'[ok]   found Kraken {VID:04x}:{PID:04x} on USB')
+        usb_dev, model = find_usb()
+        mark = 'verified' if model.tested else 'UNTESTED on this model'
+        lines.append(f'[ok]   found {model.name} ({model.usb_id}) on USB - {mark}')
+        if not model.tested:
+            lines.append('       The protocol was reverse-engineered on the 2024')
+            lines.append('       Elite. If frames are refused, this model may not')
+            lines.append('       speak the streaming protocol. Please report back.')
     except DeviceError as exc:
         # Every "cannot reach the device" case lands here: bootloader mode, no
         # cooler attached, or no libusb at all. Report it rather than traceback;
@@ -277,7 +289,7 @@ def diagnose():
     if IS_WINDOWS:
         try:
             import hid
-            found = [i for i in hid.enumerate(VID, PID)]
+            found = [i for i in hid.enumerate(VID, model.pid)]
             if found:
                 lines.append(f'[ok]   hidapi sees {len(found)} HID interface(s)')
             else:
@@ -290,7 +302,7 @@ def diagnose():
             lines.append('[FAIL] the "hid" package is not installed')
     else:
         try:
-            LinuxTransport._find_hidraw()
+            LinuxTransport._find_hidraw(model.pid)
             lines.append('[ok]   hidraw node present')
         except NotFound as exc:
             ok = False

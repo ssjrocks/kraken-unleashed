@@ -72,6 +72,7 @@ class Daemon:
         self._cooling_duties = {}      # last duty actually written, per channel
         self._cooling_tick = 0.0
         self._cooling_smoothed = None  # EMA of the host sensor
+        self.model = None              # set once the device is open
 
     # -- subsystem (re)building -------------------------------------------- #
 
@@ -84,7 +85,8 @@ class Daemon:
             path = default_background()
         self.compositor = Compositor(lcd, gif_path=path,
                                      cpu_vendor=self.sensors.cpu_vendor,
-                                     gpu_vendor=self.sensors.gpu_vendor)
+                                     gpu_vendor=self.sensors.gpu_vendor,
+                                     resolution=self.model.lcd if self.model else None)
         self._rebuild_lcd = False
 
     def build_receiver(self):
@@ -279,6 +281,9 @@ class Daemon:
                 'stats': dict(self.stats, uptime=uptime,
                               fps=self.stats['frames'] / max(uptime, 0.01)),
                 'version': __import__('kraken_unleashed').__version__,
+                'model': ({'name': self.model.name, 'usb_id': self.model.usb_id,
+                           'lcd': list(self.model.lcd) if self.model.lcd else None,
+                           'tested': self.model.tested} if self.model else None),
             }
 
     def _h_set_config(self, request):
@@ -356,6 +361,13 @@ class Daemon:
             print(exc, file=sys.stderr, flush=True)
             return 1
 
+        self.model = self.kraken.model
+        mark = '' if self.model.tested else '  [UNTESTED on this model]'
+        print(f'device: {self.model.name} ({self.model.usb_id}){mark}', flush=True)
+        if not self.model.tested:
+            print('  the LCD protocol was verified on the Kraken 2024 Elite only; '
+                  'if frames are refused this model may not support it',
+                  flush=True)
         self.dev = self.kraken.status() or {}
         print(f'device ok: {self.dev or "no status report"}', flush=True)
         if self.control.error:
