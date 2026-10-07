@@ -503,9 +503,11 @@ class Window(Adw.ApplicationWindow):
                      'Maximum cooling and maximum noise. Useful for testing or '
                      'a heavy benchmark run.'),
             'firmware': ('Nothing here is managing the cooler',
-                         'It keeps running whatever curve was last written to '
-                         'it. If you have used any of the modes above, that is '
-                         'the curve it keeps — this does not restore the one it '
+                         'Choose this to let CoolerControl or liquidctl own the '
+                         'pump and fans instead — they can, alongside this app, '
+                         'which only needs exclusive access to the screen. '
+                         'Otherwise the cooler keeps whatever curve was last '
+                         'written to it; that is not necessarily the one it '
                          'shipped with. Pick Quiet default for that.'),
         }
         title, subtitle = notes[mode]

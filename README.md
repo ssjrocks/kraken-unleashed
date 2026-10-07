@@ -113,15 +113,17 @@ colours and fonts, adding your own sensor screen or effect — is in
 
 ## Playing nicely with other software
 
-Exactly one program may hold this cooler's USB interface. If CoolerControl,
-OpenRGB or liquidctl also has it, you get flicker, a black screen, or garbage
-temperature readings.
+Only the **LCD** is single-owner — the frame data goes over a USB interface that
+one process claims exclusively. Cooling, lighting and status all share the HID
+interface, so other software can use those at the same time.
 
-- **CoolerControl** — disable the Kraken device in its UI. Fan and pump curves
-  you set there stay in the cooler's firmware and keep working.
-- **OpenRGB** — disable the NZXT Kraken detector; this service drives those LEDs.
-  If you want OpenRGB controlling them anyway, turn on the **E1.31 relay** — it
-  works without OpenRGB ever touching the device. See [RGB.md](docs/RGB.md).
+- **CoolerControl / liquidctl** — can own the pump and fans while this owns the
+  screen, which is the same split as FanControl + SignalRGB on Windows. Set
+  `cooling.mode` to `firmware` so the two don't both write curves. Just don't
+  let CoolerControl drive the *LCD*.
+- **OpenRGB** — cannot drive this cooler's LEDs at all; the firmware rejects its
+  packets. Turn on the **E1.31 relay** and OpenRGB drives them through this
+  service instead. See [RGB.md](docs/RGB.md).
 - **liquidctl** — don't run it against this device while the service is up.
 
 The service publishes the cooler's readings to

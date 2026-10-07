@@ -126,9 +126,10 @@ bold "[3/7] Checking for other software holding the cooler"
 conflict=0
 if systemctl is-active --quiet coolercontrold 2>/dev/null; then
     if python3 -c "import liquidctl" 2>/dev/null; then
-        warn "CoolerControl is running with liquidctl available, so it will try to"
-        warn "drive this cooler and fight over the USB interface. Disable the"
-        warn "Kraken device in CoolerControl -- see docs/TROUBLESHOOTING.md."
+        warn "CoolerControl is running with liquidctl available. That is fine for"
+        warn "cooling -- it can own the pump and fans alongside this service --"
+        warn "but turn OFF its LCD setting for the Kraken, which does conflict."
+        warn "See docs/TROUBLESHOOTING.md."
         conflict=1
     else
         ok "CoolerControl is running but has no liquidctl, so it cannot reach the cooler"

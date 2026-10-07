@@ -255,6 +255,18 @@ kraken-unleashed-ctl set 'cooling.fan=[[20,25],[30,30],[40,55],[50,90]]'
 Points are `[coolant temperature °C, duty %]`. In the app you get four editable
 points at 20, 30, 40 and 50 °C, which is enough to shape a sensible curve.
 
+### Letting something else do the cooling
+
+You do not have to use any of this. Only the **LCD** needs exclusive access to
+the cooler — cooling shares the HID interface, so CoolerControl or liquidctl can
+own the pump and fans while this service owns the screen and the lighting. That
+is the same split as FanControl + SignalRGB on Windows.
+
+Leave `cooling.mode` at `firmware` (the default) so the two don't both write
+curves, and set your curves wherever you prefer. Verified: with this service
+streaming at 12 fps, `liquidctl set fan speed 70` moved the fans 1145 → 1685 rpm
+and the stream stayed at 12.0 fps with zero refused frames.
+
 ### There is no factory reset
 
 Worth being clear about, because it is a trap. The protocol has **no command to

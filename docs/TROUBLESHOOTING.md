@@ -50,8 +50,11 @@ before going further.
 
 ## The screen is black, flickering, or showing the wrong thing
 
-Almost always **two programs are fighting over the device**. Only one process may
-hold the Kraken's USB interface.
+Almost always **two programs are driving the LCD**. That is the one genuinely
+exclusive part of this cooler: frame data goes over a USB interface only one
+process can claim. Cooling and status are *not* exclusive and are not the
+problem — CoolerControl or liquidctl can read and set those alongside this
+service without trouble.
 
 Check what else has it:
 

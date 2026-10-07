@@ -84,12 +84,14 @@ config to a group you are in.
 
 ## Before you start: make room for it
 
-Only one process may hold the Kraken's USB interface. If any of these are
-running, deal with them first — the installer warns, but will not change other
-people's software for you.
+Only the **LCD** is exclusive. Cooling, lighting and status share the HID
+interface and can be driven by other software at the same time, so there is less
+to clear out of the way than you might expect.
 
-**CoolerControl** — disable the Kraken *device* in its UI. Your fan and pump
-curves are stored in the cooler's firmware and keep working. (If CoolerControl
+**CoolerControl** — only a problem if it is driving the *LCD*; turn that off in
+its UI. It can keep owning the pump and fans, which is a perfectly good setup:
+leave `cooling.mode` at `firmware` and let CoolerControl do the cooling, the
+same way FanControl and SignalRGB split the job on Windows. (If CoolerControl
 has no `liquidctl` installed, it cannot reach the cooler at all and there is
 nothing to do.)
 

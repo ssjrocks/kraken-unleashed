@@ -2,12 +2,36 @@
 
 ## Device ownership
 
-The single most important design rule: **exactly one process holds the cooler.**
+The cooler has **two interfaces, and only one of them is exclusive.** Assuming
+otherwise leads to a far more restrictive design than the hardware requires —
+which is what this project did at first.
 
-The Kraken exposes a hidraw node (commands, status, LEDs) and USB bulk endpoint
-`0x02` (frame payloads). Both must be held by the same process, because the
-hidraw node is shared state — liquidctl reads *whatever report arrives next*, so
-a command issued by another program lands in its reply.
+| Interface | Carries | Exclusive? |
+|---|---|---|
+| 0 — vendor specific, bulk `0x02` | LCD frame payloads | **Yes.** libusb/WinUSB claims it; a second claim gets `EBUSY`. |
+| 1 — HID | commands, status, LEDs, cooling | **No.** Every open handle receives every input report, and writes are independent commands. |
+
+So **only the LCD is single-owner**. Cooling, lighting and status can be driven
+by other software at the same time: the kernel copies each incoming report to
+every open hidraw handle, so readers do not steal each other's replies.
+
+Measured on a Kraken 2024 Elite with this daemon streaming at 12 fps:
+`liquidctl status` returned the correct coolant temperature and RPMs on four
+consecutive attempts, and `liquidctl set fan speed 70` then `30` moved the fans
+1145 → 1685 → 840 rpm — while the stream held 12.0 fps with zero refused frames.
+
+That means the split people run on Windows (SignalRGB for the screen and
+lighting, FanControl for the cooling) works here too. Leave `cooling.mode` at
+`firmware` and let CoolerControl or liquidctl own the pump and fans.
+
+What genuinely does conflict:
+
+- **Two programs driving the LCD.** Only one can claim interface 0.
+- **Two programs driving the same LEDs.** Not an access error — they overwrite
+  each other and you get whichever wrote last.
+- **OpenRGB's Hue2 `0x22` packets**, which this firmware *rejects* outright. A
+  wrong-protocol problem rather than a contention one, and why OpenRGB drives
+  these LEDs through the E1.31 relay instead.
 
 ```
    the app ───┐                    ┌──────────────────────────┐
@@ -29,12 +53,14 @@ a command issued by another program lands in its reply.
                       Home Assistant exporter       status bars, conky, ...
 ```
 
-Note which arrows are blocked. OpenRGB cannot write to the device — but it
-*can* send E1.31 to the daemon, which relays it. The rule is never "OpenRGB is
-banned", it is "exactly one process holds the device".
+The blocked arrows are the LCD path specifically. CoolerControl and liquidctl
+can still drive the **cooling** over the HID interface at the same time; what
+they cannot do is claim the bulk interface the frames go to. OpenRGB cannot
+write to the device at all — wrong protocol — but it can send E1.31 to the
+daemon, which relays it.
 
-Because this service is the only thing reading the cooler, it publishes what it
-reads so nothing else has to open the device:
+The service publishes what it reads, so tools that only want the numbers do not
+have to open the device at all:
 
 ```json
 {"liquid": 31.4, "pump_rpm": 2280, "fan_rpm": 780, "ts": 1759553280.1,
